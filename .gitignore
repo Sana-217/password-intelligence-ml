@@ -1,0 +1,16 @@
+# Large datasets
+rockyou.txt
+rockyou.txt.gz
+dataset/rockyou.txt
+
+# Model artifacts
+models/*.pkl
+
+# Python cache
+__pycache__/
+*/__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+.envs
