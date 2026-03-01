@@ -30,6 +30,7 @@ def evaluate_password(password):
     Evaluate password using both ML models.
     ALWAYS returns (mem, strength).
     """
+    features = extract_features(password)
     try:
         features = extract_features(password)
         X = pd.DataFrame([features])
@@ -44,25 +45,10 @@ def evaluate_password(password):
 
 
 
-def generate_secure_memorable_password(max_attempts=1000):
-    best_candidate = None
-
-    for _ in range(max_attempts):
-        pwd = generate_candidate()
-        mem, strength = evaluate_password(pwd)
-
-        if mem == 1 and strength >= 1:
-            return pwd, mem, strength
-
-        # Keep a fallback candidate
-        if best_candidate is None and strength >= 1:
-            best_candidate = (pwd, mem, strength)
-
-    # If strict condition never met, return best effort
-    if best_candidate:
-        return best_candidate
-
-    return None, None, None
+def generate_secure_memorable_password(max_attempts=1):
+    pwd = generate_candidate()
+    mem, strength = evaluate_password(pwd)
+    return pwd, mem, strength
 
 
 

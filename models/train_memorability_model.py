@@ -24,9 +24,9 @@ def load_passwords(path, limit=2000):
 def label_memorability(password):
     features = extract_features(password)
     if (
-        features["syllables"] >= 2
-        and features["length"] <= 16
-        and features["char_diversity"] >= 2
+    features["syllables"] >= 1
+    and features["length"] <= 18
+    and features["char_diversity"] >= 2
     ):
         return 1  # easy to remember
     return 0      # hard to remember
