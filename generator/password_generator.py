@@ -26,7 +26,7 @@ def generate_candidate():
 def evaluate_password(password):
     try:
         features = extract_features(password)
-        print("Extracted features:", features)
+        
 
         X = pd.DataFrame([features])
 
@@ -62,13 +62,11 @@ def evaluate_password(password):
         ):
             strength = 2
 
-        print("FINAL MEM:", mem)
-        print("FINAL STRENGTH:", strength)
 
         return mem, strength
 
-    except Exception as e:
-        print("ERROR IN EVALUATION:", e)
+    except Exception:
+
         return 0, 0
 
 
@@ -81,7 +79,10 @@ def generate_secure_memorable_password(max_attempts=100):
         if strength >= 1:
             return pwd, mem, strength
 
-    return None, None, None
+    # fallback candidate if max attempts fail
+    pwd = generate_candidate()
+    mem, strength = evaluate_password(pwd)
+    return pwd, mem, strength
 
 
 # CLI mode

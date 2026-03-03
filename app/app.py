@@ -42,30 +42,30 @@ def login():
 
 @app.route("/dashboard", methods=["GET", "POST"])
 def dashboard():
-    
-    if "user" not in session:
-        return redirect("/login")
-
-    password = None
-    memorability = None
-    strength = None
 
     if request.method == "POST":
-        pwd, mem, strg = generate_secure_memorable_password()
+        pwd, mem, strength = generate_secure_memorable_password()
 
-        print("PWD:", pwd)
-        print("MEM RAW:", mem)
-        print("STRENGTH RAW:", strg)
+        # Convert memorability
+        mem_label = "Easy" if mem == 1 else "Hard"
 
-        password = pwd
-        memorability = str(mem)
-        strength = str(strg)
+        # Convert strength
+        if strength == 0:
+            strength_label = "Weak"
+        elif strength == 1:
+            strength_label = "Medium"
+        else:
+            strength_label = "Strong"
 
-    return render_template("dashboard.html",
-                           user=session["user"],
-                           password=password,
-                           memorability=memorability,
-                           strength=strength)
+        return render_template(
+            "dashboard.html",
+            password=pwd,
+            memorability=mem_label,
+            strength=strength_label
+        )
+
+    # 🔹 IMPORTANT: handle GET request
+    return render_template("dashboard.html")
 
 @app.route("/logout")
 def logout():
