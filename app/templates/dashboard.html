@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container">
+    <h2>Welcome, {{ user }}</h2>
+
+    <form method="POST">
+        <button class="btn">Generate Password</button>
+    </form>
+
+    {% if password %}
+        <br>
+        <h3>Generated Password:</h3>
+        <p><strong>{{ password }}</strong></p>
+
+        <p>Memorability: {{ memorability }}</p>
+        <p>Strength: {{ strength }}</p>
+    {% endif %}
+
+    <br>
+    <a href="/logout" class="link-btn">Logout</a>
+</div>
+</body>
+</html>

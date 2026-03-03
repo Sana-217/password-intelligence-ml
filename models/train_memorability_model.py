@@ -23,13 +23,14 @@ def load_passwords(path, limit=2000):
 
 def label_memorability(password):
     features = extract_features(password)
+
     if (
-    features["syllables"] >= 1
-    and features["length"] <= 18
-    and features["char_diversity"] >= 2
+        features["syllables"] >= 2
+        and features["length"] <= 16
+        and features["char_diversity"] >= 2
     ):
-        return 1  # easy to remember
-    return 0      # hard to remember
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
@@ -37,27 +38,29 @@ if __name__ == "__main__":
     passwords = load_passwords("dataset/rockyou.txt")
 
     print("Extracting features and labels...")
+
     X_data = []
     y_data = []
 
     for pwd in passwords:
-        X_data.append(extract_features(pwd))
+        features = extract_features(pwd)
+        X_data.append(features)
         y_data.append(label_memorability(pwd))
 
-    df = pd.DataFrame(X_data)
-    X = df
+    X = pd.DataFrame(X_data)
     y = y_data
-    print("Total usable passwords:", len(X_data))
-    if len(X_data) == 0:
-        raise ValueError("No valid passwords loaded. Check dataset.")
 
-    
-    print("Training model...")
+    print("Training memorability model...")
+
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model = RandomForestClassifier(
+        n_estimators=100,
+        random_state=42
+    )
+
     model.fit(X_train, y_train)
 
     accuracy = accuracy_score(y_test, model.predict(X_test))
