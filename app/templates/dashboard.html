@@ -9,7 +9,8 @@
     <h2>Welcome, {{ user }}</h2>
 
     <form method="POST">
-        <button class="btn">Generate Password</button>
+        <input type="text" name="phrase" placeholder="Enter a phrase (e.g., my dog name is leo)" required>
+        <button type="submit">Generate Password</button>
     </form>
 
     {% if password %}

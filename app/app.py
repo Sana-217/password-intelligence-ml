@@ -44,7 +44,12 @@ def login():
 def dashboard():
 
     if request.method == "POST":
-        pwd, mem, strength = generate_secure_memorable_password()
+        phrase = request.form.get("phrase")
+
+        pwd, mem, strength = generate_secure_memorable_password(
+            mode="phrase",
+            phrase=phrase
+        )
 
         # Convert memorability
         mem_label = "Easy" if mem == 1 else "Hard"
