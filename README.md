@@ -12,6 +12,14 @@ prediction with cognitive science memory techniques.
 
 ## Features
 
+## Features
+
+- **Phrase to Password (Core Feature)** — Takes a user's familiar phrase
+  ("my favorite color is blue") and transforms it into a secure password
+  ("Favor1teColorBlue47!") by filtering filler words, selecting anchor words,
+  applying smart substitutions, and injecting entropy. The full pipeline is
+  visible step-by-step in the UI.
+
 - **ML Strength Classifier** — Random Forest trained on 100,000 real-world
   passwords from the RockYou dataset. Classifies passwords as weak / medium / strong.
 
@@ -19,21 +27,26 @@ prediction with cognitive science memory techniques.
   features (syllable count, phonetic score, word familiarity) grounded in
   cognitive science research (Baddeley 1986, Miller 1956, Paivio 1971).
 
-- **Passphrase Transformer** — Core feature. Takes a user's familiar phrase
-  ("my dog name is Bruno") and transforms it into a secure password
-  ("BrunoD0g2024!") while preserving the memory anchor.
+- **Password Enhancement Suggestions** — Analyzes any weak password and gives
+  specific, actionable reasons why it fails, plus an automatically enhanced
+  version with improved strength and memorability scores.
 
 - **Three Generation Modes** — Passphrase (EFF wordlist), Pattern-based,
-  and Cryptographically random.
+  and Cryptographically random. All candidates ranked by combined ML score.
 
 - **Zero-Knowledge Vault** — Passwords encrypted with Argon2id key derivation
-  + AES-256-GCM (AEAD). Master password never stored anywhere.
+  + AES-256-GCM (AEAD). Master password never stored anywhere. Atomic writes
+  prevent vault corruption.
+
+- **Password Recovery Safety Nets** — Optional hint set at registration
+  (shown on login if forgotten). Full vault reset option as last resort.
 
 - **Memory Aid System** — Four cognitive techniques: Chunking, Phonetic
-  encoding, Acronym sentences, and Visual story generation.
+  encoding (NATO alphabet), Acronym sentence generation, and Visual story
+  generation. Reverse tool converts a personal sentence into a password.
 
-- **Flask Web Dashboard** — Full UI with live ML scoring, vault management,
-  and pipeline visualization.
+- **Flask Web Dashboard** — Live ML scoring as you type, example chips,
+  vault management, pipeline visualization, personalised greeting.
 
 ## Tech Stack
 
