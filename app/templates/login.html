@@ -13,9 +13,63 @@
              placeholder="Your master password" autocomplete="current-password"
              autofocus required>
     </div>
+
+    <div id="hint-section" style="display:none;margin-bottom:1rem;">
+      <div style="background:var(--surface2);border:1px solid var(--border);
+                  border-radius:8px;padding:.8rem 1rem;font-size:.85rem;">
+        <span style="color:var(--muted);">Your hint: </span>
+        <span id="hint-text" style="color:var(--text);"></span>
+      </div>
+    </div>
+
     <button type="submit" class="btn btn-primary btn-full">Unlock Vault</button>
+
+    <div style="text-align:center;margin-top:.8rem;">
+      <button type="button" class="btn btn-outline btn-sm" id="btn-show-hint">
+        Forgot password? Show hint
+      </button>
+    </div>
   </form>
+
+  <div style="margin-top:1.5rem;padding-top:1.2rem;
+              border-top:1px solid var(--border);text-align:center;">
+    <p style="color:var(--muted);font-size:.8rem;margin-bottom:.7rem;">
+      Cannot remember your password at all?
+    </p>
+    <button class="btn btn-danger btn-sm" id="btn-reset-vault">
+      Reset Vault (deletes all stored passwords)
+    </button>
+  </div>
 
   <p class="auth-footer">No vault yet? <a href="{{ url_for('register') }}">Create one</a></p>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("btn-show-hint").addEventListener("click", async () => {
+  const res  = await fetch("/get-hint");
+  const data = await res.json();
+  if (data.hint) {
+    document.getElementById("hint-text").textContent = data.hint;
+    document.getElementById("hint-section").style.display = "block";
+    document.getElementById("btn-show-hint").textContent  = "Hint shown above";
+    document.getElementById("btn-show-hint").disabled     = true;
+  } else {
+    showToast("No hint was set during registration.", "error");
+  }
+});
+
+document.getElementById("btn-reset-vault").addEventListener("click", async () => {
+  if (!confirm("This will permanently delete your vault and ALL stored passwords.\n\nThis cannot be undone. Are you sure?")) return;
+  if (!confirm("Are you absolutely sure? All passwords will be lost forever.")) return;
+
+  const res  = await fetch("/reset-vault", { method: "POST" });
+  const data = await res.json();
+  if (data.success) {
+    showToast("Vault reset. You can now register again.", "success");
+    setTimeout(() => window.location.href = "/register", 1500);
+  }
+});
+</script>
 {% endblock %}

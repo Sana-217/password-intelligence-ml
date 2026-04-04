@@ -3,7 +3,77 @@
 
 {% block content %}
 <div class="dashboard">
+  <!-- ── Passphrase Transformer Panel ── -->
+  <section class="panel" style="grid-column: 1 / -1;">
+    <h2>Phrase to Password
+      <span style="font-size:.72rem;color:var(--primary2);font-weight:500;
+             background:var(--surface2);border:1px solid var(--primary);
+             padding:.15rem .55rem;border-radius:20px;margin-left:.6rem;
+             vertical-align:middle;">
+  core feature
+</span>
+    </h2>
+    <p style="color:var(--muted);font-size:.88rem;margin-bottom:1.2rem;">
+      Enter a phrase you already know. The system extracts meaningful words,
+      applies smart substitutions, and returns a secure password you can actually remember.
+    </p>
 
+    <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:.8rem;">
+      <input type="text" id="phrase-input"
+             placeholder="e.g. my dog name is Bruno"
+             style="flex:1;min-width:200px;background:var(--surface2);border:1px solid var(--border);
+                    color:var(--text);padding:.6rem 1rem;border-radius:8px;font-size:.95rem;">
+      <input type="number" id="year-input" placeholder="Year (optional, e.g. 2024)"
+             style="width:200px;background:var(--surface2);border:1px solid var(--border);
+                    color:var(--text);padding:.6rem 1rem;border-radius:8px;font-size:.95rem;">
+      <button class="btn btn-primary" id="btn-transform">Transform</button>
+    </div>
+
+    <div class="result-box hidden" id="transform-result">
+
+      <div style="margin-bottom:1rem;">
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.3rem;">Recommended password</div>
+        <div class="result-password" id="transform-password"></div>
+        <div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" id="btn-copy-transform">Copy</button>
+          <button class="btn btn-outline btn-sm" id="btn-memory-transform">Memory Aid</button>
+          <button class="btn btn-outline btn-sm" id="btn-save-transform">Save to Vault</button>
+        </div>
+      </div>
+
+      <div id="transform-scores" class="hidden" style="margin-bottom:1rem;">
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">ML Analysis</div>
+        <div class="meter-row">
+          <span>Strength</span>
+          <div class="meter"><div class="meter-fill" id="tm-strength"></div></div>
+          <span id="tm-lbl-strength"></span>
+        </div>
+        <div class="meter-row">
+          <span>Memorability</span>
+          <div class="meter"><div class="meter-fill" id="tm-memory"></div></div>
+          <span id="tm-lbl-memory"></span>
+        </div>
+        <div class="meter-row">
+          <span>Combined Score</span>
+          <div class="meter"><div class="meter-fill" id="tm-combined"></div></div>
+          <span id="tm-lbl-combined"></span>
+        </div>
+      </div>
+
+      <div style="margin-bottom:1rem;">
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">How it was built</div>
+        <div id="transform-pipeline"
+             style="background:var(--surface2);border-radius:8px;padding:.8rem 1rem;
+                    font-size:.82rem;line-height:1.9;font-family:monospace;"></div>
+      </div>
+
+      <div>
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">Alternative variants</div>
+        <div id="transform-candidates"></div>
+      </div>
+
+    </div>
+  </section>
   <!-- ── Generator Panel ── -->
   <section class="panel">
     <h2>Generate Password</h2>
@@ -96,6 +166,21 @@
         <span id="lbl-combined"></span>
       </div>
     </div>
+    <!-- ── Enhancement suggestions ── -->
+<div class="result-box hidden" id="enhance-result">
+  <div style="font-size:.78rem;color:var(--muted);margin-bottom:.8rem;font-weight:500;">
+    Suggestions to improve this password
+  </div>
+  <div id="enhance-list" style="display:flex;flex-direction:column;gap:.6rem;"></div>
+  <div style="margin-top:1rem;border-top:1px solid var(--border);padding-top:.8rem;">
+    <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">Enhanced version</div>
+    <div class="result-password" id="enhance-password"></div>
+    <div style="display:flex;gap:.5rem;margin-top:.5rem;">
+      <button class="btn btn-outline btn-sm" id="btn-copy-enhance">Copy</button>
+      <button class="btn btn-outline btn-sm" id="btn-save-enhance">Save to Vault</button>
+    </div>
+  </div>
+</div>
   </section>
 
   <!-- ── Vault Panel ── -->
@@ -180,72 +265,7 @@
     </div>
   </section>
 
-  <!-- ── Passphrase Transformer Panel ── -->
-  <section class="panel" style="grid-column: 1 / -1;">
-    <h2>Phrase to Password
-      <span style="font-size:.75rem;color:var(--muted);font-weight:400;">— your core feature</span>
-    </h2>
-    <p style="color:var(--muted);font-size:.88rem;margin-bottom:1.2rem;">
-      Enter a phrase you already know. The system extracts meaningful words,
-      applies smart substitutions, and returns a secure password you can actually remember.
-    </p>
 
-    <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:.8rem;">
-      <input type="text" id="phrase-input"
-             placeholder="e.g. my dog name is Bruno"
-             style="flex:1;min-width:200px;background:var(--surface2);border:1px solid var(--border);
-                    color:var(--text);padding:.6rem 1rem;border-radius:8px;font-size:.95rem;">
-      <input type="number" id="year-input" placeholder="Year (optional, e.g. 2024)"
-             style="width:200px;background:var(--surface2);border:1px solid var(--border);
-                    color:var(--text);padding:.6rem 1rem;border-radius:8px;font-size:.95rem;">
-      <button class="btn btn-primary" id="btn-transform">Transform</button>
-    </div>
-
-    <div class="result-box hidden" id="transform-result">
-
-      <div style="margin-bottom:1rem;">
-        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.3rem;">Recommended password</div>
-        <div class="result-password" id="transform-password"></div>
-        <div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap;">
-          <button class="btn btn-outline btn-sm" id="btn-copy-transform">Copy</button>
-          <button class="btn btn-outline btn-sm" id="btn-memory-transform">Memory Aid</button>
-          <button class="btn btn-outline btn-sm" id="btn-save-transform">Save to Vault</button>
-        </div>
-      </div>
-
-      <div id="transform-scores" class="hidden" style="margin-bottom:1rem;">
-        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">ML Analysis</div>
-        <div class="meter-row">
-          <span>Strength</span>
-          <div class="meter"><div class="meter-fill" id="tm-strength"></div></div>
-          <span id="tm-lbl-strength"></span>
-        </div>
-        <div class="meter-row">
-          <span>Memorability</span>
-          <div class="meter"><div class="meter-fill" id="tm-memory"></div></div>
-          <span id="tm-lbl-memory"></span>
-        </div>
-        <div class="meter-row">
-          <span>Combined Score</span>
-          <div class="meter"><div class="meter-fill" id="tm-combined"></div></div>
-          <span id="tm-lbl-combined"></span>
-        </div>
-      </div>
-
-      <div style="margin-bottom:1rem;">
-        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">How it was built</div>
-        <div id="transform-pipeline"
-             style="background:var(--surface2);border-radius:8px;padding:.8rem 1rem;
-                    font-size:.82rem;line-height:1.9;font-family:monospace;"></div>
-      </div>
-
-      <div>
-        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">Alternative variants</div>
-        <div id="transform-candidates"></div>
-      </div>
-
-    </div>
-  </section>
 
 </div>
 {% endblock %}
@@ -322,33 +342,21 @@ document.getElementById("btn-generate").addEventListener("click", async () => {
 document.getElementById("btn-analyze").addEventListener("click", async () => {
   const pwd = document.getElementById("analyze-input").value.trim();
   if (!pwd) return;
-  const res = await postJSON("/analyze", { password: pwd });
-  if (!res.success) { showToast(res.error, "error"); return; }
-  document.getElementById("analyze-placeholder").style.display = "none";
-  setMeter("meter-strength", "lbl-strength", res.strength_proba,    res.strength_label);
-  setMeter("meter-memory",   "lbl-memory",   res.memorability_proba, res.memorability_label);
-  setMeter("meter-combined", "lbl-combined", res.combined_score,    `${(res.combined_score*100).toFixed(0)}%`);
-  document.getElementById("analyze-result").classList.remove("hidden");
+  await analyzeAndEnhance(pwd);
 });
 
-// ── example chips ──────────────────────────────────────────────────
 document.querySelectorAll(".example-pwd").forEach(chip => {
   chip.addEventListener("click", async () => {
     const pwd = chip.textContent;
     document.getElementById("analyze-input").value = pwd;
-    document.getElementById("analyze-placeholder").style.display = "none";
-    const res = await postJSON("/analyze", { password: pwd });
-    if (!res.success) { showToast(res.error, "error"); return; }
-    setMeter("meter-strength", "lbl-strength", res.strength_proba,    res.strength_label);
-    setMeter("meter-memory",   "lbl-memory",   res.memorability_proba, res.memorability_label);
-    setMeter("meter-combined", "lbl-combined", res.combined_score,    `${(res.combined_score*100).toFixed(0)}%`);
-    document.getElementById("analyze-result").classList.remove("hidden");
+    await analyzeAndEnhance(pwd);
   });
 });
 
-// ── hide placeholder on focus ──────────────────────────────────────
-document.getElementById("analyze-input").addEventListener("focus", () => {
-  document.getElementById("analyze-placeholder").style.display = "none";
+document.getElementById("analyze-input").addEventListener("input", async (e) => {
+  if (e.target.value.length < 4) return;
+  clearTimeout(window._analyzeTimer);
+  window._analyzeTimer = setTimeout(() => analyzeAndEnhance(e.target.value), 500);
 });
 
 // ── live analysis as user types ────────────────────────────────────
@@ -506,5 +514,86 @@ document.getElementById("btn-transform").addEventListener("click", async () => {
     showToast("Password filled — add a label and click Store.", "success");
   };
 });
+
+
+// Add this function once, used by all analyze triggers
+async function analyzeAndEnhance(pwd) {
+  const res = await postJSON("/analyze", { password: pwd });
+  if (!res.success) { showToast(res.error, "error"); return; }
+
+  document.getElementById("analyze-placeholder").style.display = "none";
+  setMeter("meter-strength", "lbl-strength", res.strength_proba,    res.strength_label);
+  setMeter("meter-memory",   "lbl-memory",   res.memorability_proba, res.memorability_label);
+  setMeter("meter-combined", "lbl-combined", res.combined_score,    `${(res.combined_score*100).toFixed(0)}%`);
+  document.getElementById("analyze-result").classList.remove("hidden");
+
+  if (res.strength_label !== "strong" || res.memorability_label === "not_memorable") {
+    const enh = await postJSON("/enhance", { password: pwd });
+    if (enh.success) showEnhancements(enh, pwd);
+  } else {
+    document.getElementById("enhance-result").classList.add("hidden");
+  }
+}
+
+function showEnhancements(enh, original) {
+  const typeColors = {
+    critical: "#e74c3c",
+    error:    "#e74c3c",
+    warning:  "#f39c12",
+    info:     "#3b82f6",
+  };
+  const typeIcons = {
+    critical: "✕",
+    error:    "✕",
+    warning:  "⚠",
+    info:     "→",
+  };
+
+  const list = document.getElementById("enhance-list");
+  list.innerHTML = enh.suggestions.map(s =>
+    `<div style="display:flex;gap:.7rem;align-items:flex-start;
+                 background:var(--surface2);border-radius:8px;
+                 padding:.6rem .8rem;border-left:3px solid ${typeColors[s.type]};">
+      <span style="color:${typeColors[s.type]};font-size:.9rem;
+                   margin-top:.1rem;flex-shrink:0;">${typeIcons[s.type]}</span>
+      <div>
+        <div style="font-size:.82rem;color:var(--text);margin-bottom:.2rem;">
+          ${s.issue}
+        </div>
+        <div style="font-size:.78rem;color:var(--muted);">
+          Fix: ${s.fix}
+        </div>
+      </div>
+    </div>`
+  ).join("");
+
+  // Show enhanced password with its scores
+  const ep = document.getElementById("enhance-password");
+  ep.textContent = enh.enhanced;
+
+  if (enh.enhanced_scores) {
+    const s = enh.enhanced_scores;
+    const scoreColor = s.combined_score >= 0.7 ? "#2ecc71" :
+                       s.combined_score >= 0.4 ? "#f39c12" : "#e74c3c";
+    ep.innerHTML =
+      `<span style="color:var(--primary2)">${enh.enhanced}</span>
+       <span style="font-size:.75rem;color:${scoreColor};margin-left:.8rem;">
+         ${s.strength_label} · ${s.memorability_label} ·
+         score ${(s.combined_score*100).toFixed(0)}%
+       </span>`;
+  }
+
+  document.getElementById("btn-copy-enhance").onclick = () =>
+    copyToClipboard(enh.enhanced, document.getElementById("btn-copy-enhance"));
+
+  document.getElementById("btn-save-enhance").onclick = () => {
+    document.getElementById("vault-password").value = enh.enhanced;
+    document.getElementById("vault-label").focus();
+    showToast("Enhanced password filled — add a label and Store.", "success");
+  };
+
+  document.getElementById("enhance-result").classList.remove("hidden");
+}
 </script>
+
 {% endblock %}

@@ -42,26 +42,6 @@ TRANSFORMATION PIPELINE (5 stages)
             Reason: guarantees digits + special chars without destroying
             the readable core of the password
 
-DESIGN DECISIONS (for your viva)
-──────────────────────────────────
-Q: Why remove filler words?
-A: "is", "the", "a", "my" add zero memorability. Removing them
-   makes the password shorter without losing the memory anchor.
-
-Q: Why only substitute ONE word?
-A: Full leet-speak (p@ssw0rd) is in every cracker's dictionary.
-   Single substitution is rarer and still readable.
-
-Q: Why append suffix instead of inserting randomly?
-A: Users remember "word + number + symbol" patterns more reliably
-   than scattered insertions. Appendix position is predictable TO
-   THE USER but not to an attacker who doesn't know the base phrase.
-
-Q: Is this actually secure?
-A: Yes — the security comes from the entropy of the original phrase
-   (which an attacker cannot guess) combined with the transformation.
-   The phrase "my dog name is Bruno" has ~40+ bits of entropy from
-   the attacker's perspective if they don't know your dog's name.
 """
 
 import re

@@ -12,6 +12,9 @@
   <a href="{{ url_for('index') }}" class="nav-brand">PassGuard</a>
   <div class="nav-links">
     {% if session.get('logged_in') %}
+      <span style="color:var(--muted);font-size:.88rem;margin-right:.5rem;">
+        Hi, {{ session.get('username', 'User') }}
+      </span>
       <a href="{{ url_for('dashboard') }}">Dashboard</a>
       <a href="{{ url_for('memory_aid') }}">Memory Aid</a>
       <a href="{{ url_for('logout') }}">Logout</a>
@@ -21,7 +24,6 @@
     {% endif %}
   </div>
 </nav>
-
 <main class="container">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}

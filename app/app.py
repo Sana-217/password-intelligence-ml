@@ -32,7 +32,7 @@ SECURITY NOTES
 """
 
 import sys
-
+import json
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -112,9 +112,13 @@ def register():
             return redirect(url_for("login"))
         return render_template("register.html")
 
-    master  = request.form.get("master_password", "").strip()
-    confirm = request.form.get("confirm_password", "").strip()
+    username = request.form.get("username", "").strip()
+    master   = request.form.get("master_password", "").strip()
+    confirm  = request.form.get("confirm_password", "").strip()
 
+    if not username:
+        flash("Please enter your name.", "danger")
+        return render_template("register.html")
     if not master:
         flash("Master password cannot be empty.", "danger")
         return render_template("register.html")
@@ -127,10 +131,17 @@ def register():
 
     try:
         initialise_vault(master)
+
+        hint      = request.form.get("hint", "").strip()
+        name_file = ROOT / "vault_meta.json"
+        name_file.write_text(json.dumps({"username": username, "hint": hint}))
+
         session["logged_in"] = True
         session["master"]    = master
-        flash("Vault created successfully. Welcome!", "success")
+        session["username"]  = username
+        flash(f"Welcome, {username}! Your vault has been created.", "success")
         return redirect(url_for("dashboard"))
+
     except VaultError as e:
         flash(str(e), "danger")
         return render_template("register.html")
@@ -155,6 +166,15 @@ def login():
         vm.lock()
         session["logged_in"] = True
         session["master"]    = master
+
+        # Load username if saved
+        name_file = ROOT / "vault_meta.json"
+        if name_file.exists():
+            meta = json.loads(name_file.read_text())
+            session["username"] = meta.get("username", "User")
+        else:
+            session["username"] = "User"
+
         return redirect(url_for("dashboard"))
     except WrongMasterPasswordError:
         flash("Incorrect master password.", "danger")
@@ -163,14 +183,35 @@ def login():
         flash(f"Error: {e}", "danger")
         return render_template("login.html")
 
-
 @app.route("/logout")
 def logout():
     session.clear()
     flash("Logged out successfully.", "success")
     return redirect(url_for("login"))
 
+@app.route("/get-hint")
+def get_hint():
+    name_file = ROOT / "vault_meta.json"
+    if name_file.exists():
+        meta = json.loads(name_file.read_text())
+        return jsonify({"hint": meta.get("hint", "")})
+    return jsonify({"hint": ""})
 
+
+@app.route("/reset-vault", methods=["POST"])
+def reset_vault():
+    import os
+    vault_file = ROOT / "vault.json"
+    meta_file  = ROOT / "vault_meta.json"
+    try:
+        if vault_file.exists():
+            os.remove(vault_file)
+        if meta_file.exists():
+            os.remove(meta_file)
+        session.clear()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 # ── routes: dashboard ─────────────────────────────────────────────────────────
 
 @app.route("/dashboard")
@@ -325,7 +366,161 @@ def analyze():
     except Exception as e:
         return _json_error(str(e))
 
+@app.route("/enhance", methods=["POST"])
+@login_required
+def enhance():
+    """
+    Analyzes a weak/medium password and returns:
+      1. Specific reasons why it's weak
+      2. Actionable suggestions
+      3. An enhanced version of the password
+    """
+    data     = request.get_json(silent=True) or request.form
+    password = data.get("password", "").strip()
 
+    if not password:
+        return _json_error("Password cannot be empty.")
+
+    try:
+        from preprocessing.feature_extraction import (
+            get_length, get_shannon_entropy, get_charset_size,
+            get_word_count, get_syllable_count, get_has_keyboard_walk,
+            get_has_repeated_chars, get_is_common_password,
+            get_special_char_ratio, get_uppercase_ratio, get_digit_ratio,
+        )
+        import secrets as _sec
+        import string as _str
+
+        suggestions = []
+        enhanced    = password
+
+        # ── diagnose and suggest ──────────────────────────────────
+        if get_is_common_password(password):
+            suggestions.append({
+                "issue": "This is one of the most commonly used passwords",
+                "fix":   "It appears in every attacker's dictionary — change it completely",
+                "type":  "critical",
+            })
+
+        if get_length(password) < 10:
+            suggestions.append({
+                "issue": f"Too short — only {get_length(password)} characters",
+                "fix":   "Add at least 4 more characters — length is the single biggest factor in security",
+                "type":  "error",
+            })
+
+        if get_has_keyboard_walk(password):
+            suggestions.append({
+                "issue": "Contains a keyboard walk pattern (e.g. qwerty, 12345)",
+                "fix":   "Replace the sequential pattern with random characters",
+                "type":  "error",
+            })
+
+        if get_has_repeated_chars(password):
+            suggestions.append({
+                "issue": "Contains repeated characters (e.g. aaa, 111)",
+                "fix":   "Replace repeated characters with varied ones",
+                "type":  "warning",
+            })
+
+        if get_charset_size(password) < 36:
+            if not any(c in _str.ascii_uppercase for c in password):
+                suggestions.append({
+                    "issue": "No uppercase letters",
+                    "fix":   "Capitalise at least one word or add an uppercase letter",
+                    "type":  "warning",
+                })
+            if not any(c in _str.digits for c in password):
+                suggestions.append({
+                    "issue": "No digits",
+                    "fix":   "Add 2–3 numbers — avoid predictable ones like 123",
+                    "type":  "warning",
+                })
+
+        if get_special_char_ratio(password) == 0:
+            suggestions.append({
+                "issue": "No special characters",
+                "fix":   "Add at least one special character (!, @, #, $, &)",
+                "type":  "warning",
+            })
+
+        if get_shannon_entropy(password) < 2.5:
+            suggestions.append({
+                "issue": "Very low entropy — characters are too repetitive",
+                "fix":   "Use a wider variety of characters",
+                "type":  "warning",
+            })
+
+        if get_word_count(password) == 0 and get_syllable_count(password) < 2:
+            suggestions.append({
+                "issue": "Not memorable — no recognisable words or syllables",
+                "fix":   "Add a real word to create a memory anchor, e.g. append your pet's name",
+                "type":  "info",
+            })
+
+        if not suggestions:
+            suggestions.append({
+                "issue": "Password looks reasonable",
+                "fix":   "Consider using our Passphrase mode for something both stronger and more memorable",
+                "type":  "info",
+            })
+
+        # ── build enhanced version ────────────────────────────────
+        enhanced = _build_enhanced(password)
+
+        # ── score the enhanced version ────────────────────────────
+        enhanced_scores = score_password(enhanced)
+
+        return _json_ok({
+            "original":        password,
+            "suggestions":     suggestions,
+            "enhanced":        enhanced,
+            "enhanced_scores": enhanced_scores,
+        })
+
+    except Exception as e:
+        return _json_error(str(e))
+
+
+def _build_enhanced(password: str) -> str:
+    """
+    Builds an improved version of a weak password by applying
+    targeted enhancements. Preserves the original structure
+    so the user still recognises it.
+    """
+    import secrets as _sec
+    import string  as _str
+
+    enhanced = password
+
+    # 1. Capitalise first letter if all lowercase
+    if enhanced == enhanced.lower():
+        enhanced = enhanced.capitalize()
+
+    # 2. Add a special character if missing
+    if not any(c in _str.punctuation for c in enhanced):
+        enhanced += _sec.choice("!@#$&*")
+
+    # 3. Add digits if missing
+    if not any(c.isdigit() for c in enhanced):
+        enhanced += str(_sec.randbelow(90) + 10)  # 10–99
+
+    # 4. If still too short, append a random word fragment
+    if len(enhanced) < 12:
+        fragments = ["Sky", "Fox", "Blaze", "Nova", "Crypt", "Storm"]
+        enhanced += _sec.choice(fragments)
+
+    # 5. If still no uppercase mid-word, capitalise a random vowel position
+    if not any(c.isupper() for c in enhanced[1:]):
+        vowel_positions = [
+            i for i, c in enumerate(enhanced)
+            if c.lower() in "aeiou" and i > 0
+        ]
+        if vowel_positions:
+            pos      = _sec.choice(vowel_positions)
+            enhanced = enhanced[:pos] + enhanced[pos].upper() + enhanced[pos+1:]
+
+    return enhanced
 # ── routes: vault CRUD (AJAX) ─────────────────────────────────────────────────
 
 @app.route("/store", methods=["POST"])
@@ -470,3 +665,4 @@ if __name__ == "__main__":
     print("  Running at: http://127.0.0.1:5000")
     print("=" * 50)
     app.run(debug=True, port=5000)
+    

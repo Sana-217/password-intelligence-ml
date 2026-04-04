@@ -21,3 +21,5 @@ vault.json.tmp
 models/*.joblib
 
 secure_store.json
+
+vault_meta.json
