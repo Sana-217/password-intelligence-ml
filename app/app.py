@@ -1,81 +1,472 @@
+# app/app.py
+"""
+Flask web application — the user-facing interface for the entire project.
+
+ROUTES
+───────
+  GET  /                  → index (landing page)
+  GET  /register          → registration form
+  POST /register          → create vault + redirect to dashboard
+  GET  /login             → login form
+  POST /login             → verify master password + redirect to dashboard
+  GET  /dashboard         → main dashboard (requires login)
+  POST /generate          → generate password (AJAX JSON)
+  POST /analyze           → analyze a password (AJAX JSON)
+  POST /store             → store password in vault (AJAX JSON)
+  POST /retrieve          → retrieve password from vault (AJAX JSON)
+  POST /delete            → delete vault entry (AJAX JSON)
+  GET  /memory-aid        → memory aid page for a password
+  GET  /logout            → clear session + redirect to login
+
+SESSION
+────────
+  session["master"]    → master password (in-memory only, never written to disk)
+  session["logged_in"] → True when authenticated
+
+SECURITY NOTES
+───────────────
+  - Master password lives in Flask session (server-side, signed cookie)
+  - Session expires when browser closes (SESSION_PERMANENT = False)
+  - All vault routes check session["logged_in"] before executing
+  - Wrong master password → WrongMasterPasswordError → 401 response
+"""
+
 import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from generator.password_generator import generate_secure_memorable_password
-from flask import Flask, render_template, request, redirect, session
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from functools import wraps
+from generator.passphrase_transformer import transform_with_scores
 
-app = Flask(__name__)
-app.secret_key = "super_secret_key_change_this"
+from flask import (
+    Flask, render_template, request, redirect,
+    url_for, session, jsonify, flash,
+)
 
-# Temporary in-memory storage (we'll improve later)
-users = {}
+
+
+from generator.password_gen  import generate_best, score_password
+from generator.memory_aid    import generate_memory_aids, sentence_to_password
+from security.storage        import (
+    VaultManager,
+    initialise_vault,
+    vault_exists,
+    WrongMasterPasswordError,
+    EntryNotFoundError,
+    EntryAlreadyExistsError,
+    VaultError,
+)
+
+# ── app factory ───────────────────────────────────────────────────────────────
+
+app = Flask(__name__, template_folder="templates", static_folder="static")
+app.secret_key = "change-this-in-production-use-secrets-module"
+app.config["SESSION_PERMANENT"] = False
+
+
+# ── login required decorator ──────────────────────────────────────────────────
+
+def login_required(f):
+    """Redirects to /login if user is not authenticated."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("logged_in"):
+            flash("Please log in first.", "warning")
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _get_vault() -> VaultManager:
+    """Returns an unlocked VaultManager using the session master password."""
+    vm = VaultManager()
+    vm.unlock(session["master"])
+    return vm
+
+
+def _json_error(message: str, status: int = 400):
+    return jsonify({"success": False, "error": message}), status
+
+
+def _json_ok(data: dict):
+    return jsonify({"success": True, **data})
+
+
+# ── routes: auth ──────────────────────────────────────────────────────────────
 
 @app.route("/")
-def home():
+def index():
+    if session.get("logged_in"):
+        return redirect(url_for("dashboard"))
     return render_template("index.html")
+
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
+    if request.method == "GET":
+        if vault_exists():
+            flash("A vault already exists. Please log in.", "info")
+            return redirect(url_for("login"))
+        return render_template("register.html")
 
-        users[username] = password
-        return redirect("/login")
+    master  = request.form.get("master_password", "").strip()
+    confirm = request.form.get("confirm_password", "").strip()
 
-    return render_template("register.html")
+    if not master:
+        flash("Master password cannot be empty.", "danger")
+        return render_template("register.html")
+    if len(master) < 8:
+        flash("Master password must be at least 8 characters.", "danger")
+        return render_template("register.html")
+    if master != confirm:
+        flash("Passwords do not match.", "danger")
+        return render_template("register.html")
+
+    try:
+        initialise_vault(master)
+        session["logged_in"] = True
+        session["master"]    = master
+        flash("Vault created successfully. Welcome!", "success")
+        return redirect(url_for("dashboard"))
+    except VaultError as e:
+        flash(str(e), "danger")
+        return render_template("register.html")
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
+    if request.method == "GET":
+        if not vault_exists():
+            flash("No vault found. Please register first.", "info")
+            return redirect(url_for("register"))
+        return render_template("login.html")
 
-        if username in users and users[username] == password:
-            session["user"] = username
-            return redirect("/dashboard")
+    master = request.form.get("master_password", "").strip()
+    if not master:
+        flash("Please enter your master password.", "danger")
+        return render_template("login.html")
 
-        return "Invalid credentials"
+    try:
+        vm = VaultManager()
+        vm.unlock(master)
+        vm.lock()
+        session["logged_in"] = True
+        session["master"]    = master
+        return redirect(url_for("dashboard"))
+    except WrongMasterPasswordError:
+        flash("Incorrect master password.", "danger")
+        return render_template("login.html")
+    except Exception as e:
+        flash(f"Error: {e}", "danger")
+        return render_template("login.html")
 
-    return render_template("login.html")
-
-@app.route("/dashboard", methods=["GET", "POST"])
-def dashboard():
-
-    if request.method == "POST":
-        phrase = request.form.get("phrase")
-
-        pwd, mem, strength = generate_secure_memorable_password(
-            mode="phrase",
-            phrase=phrase
-        )
-
-        # Convert memorability
-        mem_label = "Easy" if mem == 1 else "Hard"
-
-        # Convert strength
-        if strength == 0:
-            strength_label = "Weak"
-        elif strength == 1:
-            strength_label = "Medium"
-        else:
-            strength_label = "Strong"
-
-        return render_template(
-            "dashboard.html",
-            password=pwd,
-            memorability=mem_label,
-            strength=strength_label
-        )
-
-    # 🔹 IMPORTANT: handle GET request
-    return render_template("dashboard.html")
 
 @app.route("/logout")
 def logout():
-    session.pop("user", None)
-    return redirect("/")
+    session.clear()
+    flash("Logged out successfully.", "success")
+    return redirect(url_for("login"))
+
+
+# ── routes: dashboard ─────────────────────────────────────────────────────────
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    try:
+        vm     = _get_vault()
+        labels = vm.list_labels()
+        count  = len(labels)
+        vm.lock()
+    except Exception:
+        labels = []
+        count  = 0
+    return render_template("dashboard.html", labels=labels, count=count)
+
+
+# ── routes: generate (AJAX) ───────────────────────────────────────────────────
+
+@app.route("/generate", methods=["POST"])
+@login_required
+def generate():
+    """
+    Accepts JSON or form data. Returns best generated password + ML scores.
+
+    Request body:
+        mode         : "passphrase" | "pattern" | "random"
+        n_words      : int (passphrase only, default 4)
+        separator    : str (passphrase only, default "-")
+        pattern      : str (pattern only, e.g. "Wwww-ddd-s")
+        length       : int (random only, default 16)
+        n_candidates : int (default 5)
+
+    Response:
+        { success, password, strength_label, memorability_label,
+          combined_score, strength_proba, memorability_proba, mode }
+    """
+    data = request.get_json(silent=True) or request.form
+
+    mode         = data.get("mode", "passphrase")
+    n_candidates = int(data.get("n_candidates", 5))
+
+    try:
+        if mode == "passphrase":
+            result = generate_best(
+                mode="passphrase",
+                n_words=int(data.get("n_words", 4)),
+                separator=data.get("separator", "-"),
+                capitalise=data.get("capitalise", "true") != "false",
+                n_candidates=n_candidates,
+            )
+        elif mode == "pattern":
+            pattern = data.get("pattern", "")
+            if not pattern:
+                return _json_error("Pattern is required for pattern mode.")
+            result = generate_best(
+                mode="pattern",
+                pattern=pattern,
+                n_candidates=n_candidates,
+            )
+        elif mode == "random":
+            result = generate_best(
+                mode="random",
+                length=int(data.get("length", 16)),
+                use_uppercase=data.get("use_uppercase", "true") != "false",
+                use_digits=data.get("use_digits", "true") != "false",
+                use_special=data.get("use_special", "true") != "false",
+                n_candidates=n_candidates,
+            )
+        else:
+            return _json_error(f"Unknown mode: {mode}")
+
+        best = result["best"]
+        return _json_ok({
+            "password":           best["password"],
+            "strength_label":     best["strength_label"],
+            "memorability_label": best["memorability_label"],
+            "combined_score":     best["combined_score"],
+            "strength_proba":     best["strength_proba"],
+            "memorability_proba": best["memorability_proba"],
+            "mode":               mode,
+            "all_candidates":     [
+                {
+                    "password": c["password"],
+                    "score":    c["combined_score"],
+                    "strength": c["strength_label"],
+                }
+                for c in result["all"]
+            ],
+        })
+
+    except Exception as e:
+        return _json_error(str(e))
+
+@app.route("/transform", methods=["POST"])
+@login_required
+def transform():
+    data   = request.get_json(silent=True) or request.form
+    phrase = data.get("phrase", "").strip()
+    year   = data.get("year", None)
+
+    if not phrase:
+        return _json_error("Phrase cannot be empty.")
+
+    try:
+        result = transform_with_scores(
+            phrase,
+            year=int(year) if year else None,
+        )
+        return _json_ok({
+            "password":    result["password"],
+            "candidates":  result["candidates"],
+            "pipeline":    result["pipeline"],
+            "explanation": result["explanation"],
+            "tips":        result["strength_tips"],
+            "ml_scores":   result.get("ml_scores"),
+        })
+    except ValueError as e:
+        return _json_error(str(e))
+    except Exception as e:
+        return _json_error(str(e))
+# ── routes: analyze (AJAX) ────────────────────────────────────────────────────
+
+@app.route("/analyze", methods=["POST"])
+@login_required
+def analyze():
+    """
+    Scores a user-supplied password through both ML models.
+
+    Request body:
+        password : str
+
+    Response:
+        { success, password, strength_label, memorability_label,
+          combined_score, strength_proba, memorability_proba }
+    """
+    data     = request.get_json(silent=True) or request.form
+    password = data.get("password", "").strip()
+
+    if not password:
+        return _json_error("Password cannot be empty.")
+
+    try:
+        scores = score_password(password)
+        return _json_ok({
+            "password":           scores["password"],
+            "strength_label":     scores["strength_label"],
+            "memorability_label": scores["memorability_label"],
+            "combined_score":     scores["combined_score"],
+            "strength_proba":     scores["strength_proba"],
+            "memorability_proba": scores["memorability_proba"],
+        })
+    except Exception as e:
+        return _json_error(str(e))
+
+
+# ── routes: vault CRUD (AJAX) ─────────────────────────────────────────────────
+
+@app.route("/store", methods=["POST"])
+@login_required
+def store():
+    """Stores a password in the vault under a label."""
+    data     = request.get_json(silent=True) or request.form
+    label    = data.get("label", "").strip()
+    password = data.get("password", "").strip()
+
+    if not label:
+        return _json_error("Label cannot be empty.")
+    if not password:
+        return _json_error("Password cannot be empty.")
+
+    try:
+        vm = _get_vault()
+        vm.store(label, password)
+        vm.lock()
+        return _json_ok({"label": label, "message": f"'{label}' stored."})
+    except EntryAlreadyExistsError:
+        return _json_error(
+            f"'{label}' already exists. Use update to overwrite.", 409
+        )
+    except Exception as e:
+        return _json_error(str(e))
+
+
+@app.route("/retrieve", methods=["POST"])
+@login_required
+def retrieve():
+    """Retrieves and decrypts a stored password."""
+    data  = request.get_json(silent=True) or request.form
+    label = data.get("label", "").strip()
+
+    if not label:
+        return _json_error("Label cannot be empty.")
+
+    try:
+        vm       = _get_vault()
+        password = vm.retrieve(label)
+        vm.lock()
+        return _json_ok({"label": label, "password": password})
+    except EntryNotFoundError:
+        return _json_error(f"No entry found for '{label}'.", 404)
+    except Exception as e:
+        return _json_error(str(e))
+
+
+@app.route("/update", methods=["POST"])
+@login_required
+def update():
+    """Updates an existing vault entry."""
+    data         = request.get_json(silent=True) or request.form
+    label        = data.get("label", "").strip()
+    new_password = data.get("password", "").strip()
+
+    if not label or not new_password:
+        return _json_error("Label and password are required.")
+
+    try:
+        vm = _get_vault()
+        vm.update(label, new_password)
+        vm.lock()
+        return _json_ok({"label": label, "message": f"'{label}' updated."})
+    except EntryNotFoundError:
+        return _json_error(f"No entry found for '{label}'.", 404)
+    except Exception as e:
+        return _json_error(str(e))
+
+
+@app.route("/delete", methods=["POST"])
+@login_required
+def delete():
+    """Deletes a vault entry."""
+    data  = request.get_json(silent=True) or request.form
+    label = data.get("label", "").strip()
+
+    if not label:
+        return _json_error("Label cannot be empty.")
+
+    try:
+        vm = _get_vault()
+        vm.delete(label)
+        vm.lock()
+        return _json_ok({"label": label, "message": f"'{label}' deleted."})
+    except EntryNotFoundError:
+        return _json_error(f"No entry found for '{label}'.", 404)
+    except Exception as e:
+        return _json_error(str(e))
+
+
+@app.route("/list-labels")
+@login_required
+def list_labels_route():
+    """Returns all stored labels as JSON."""
+    try:
+        vm     = _get_vault()
+        labels = vm.list_labels()
+        vm.lock()
+        return _json_ok({"labels": labels})
+    except Exception as e:
+        return _json_error(str(e))
+
+
+# ── routes: memory aid ────────────────────────────────────────────────────────
+
+@app.route("/memory-aid", methods=["GET", "POST"])
+@login_required
+def memory_aid():
+    password = request.args.get("password") or (
+        (request.get_json(silent=True) or request.form).get("password", "")
+    )
+    aids = None
+    if password:
+        try:
+            aids = generate_memory_aids(password.strip())
+        except Exception as e:
+            flash(str(e), "danger")
+    return render_template("memory_aid.html", aids=aids, password=password)
+
+
+@app.route("/sentence-to-password", methods=["POST"])
+@login_required
+def from_sentence():
+    data     = request.get_json(silent=True) or request.form
+    sentence = data.get("sentence", "").strip()
+    if not sentence:
+        return _json_error("Sentence cannot be empty.")
+    try:
+        result = sentence_to_password(sentence)
+        return _json_ok(result)
+    except Exception as e:
+        return _json_error(str(e))
+
+
+# ── run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    print("=" * 50)
+    print("  PassGuard — AI Password Security System")
+    print("  Running at: http://127.0.0.1:5000")
+    print("=" * 50)
+    app.run(debug=True, port=5000)

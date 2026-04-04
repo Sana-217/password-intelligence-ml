@@ -1,7 +1,20 @@
-flask
+# ML
+scikit-learn
 numpy
 pandas
-scikit-learn
+joblib
+zxcvbn
+
+# NLP / linguistic
 nltk
 pyphen
-joblib
+
+# Security
+cryptography
+argon2-cffi
+
+# Web
+flask
+
+# Dev
+pytest

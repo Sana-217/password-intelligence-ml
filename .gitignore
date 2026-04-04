@@ -14,3 +14,10 @@ __pycache__/
 # Virtual environments
 venv/
 .envs
+vault.json
+vault.json.tmp
+*.bin
+.env
+models/*.joblib
+
+secure_store.json

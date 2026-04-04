@@ -1,0 +1,33 @@
+Memorability Model — Classification Report
+==================================================
+Overall Accuracy: 1.0000
+
+               precision    recall  f1-score   support
+
+not_memorable     1.0000    1.0000    1.0000      7336
+    memorable     1.0000    1.0000    1.0000     12664
+
+     accuracy                         1.0000     20000
+    macro avg     1.0000    1.0000    1.0000     20000
+ weighted avg     1.0000    1.0000    1.0000     20000
+
+Confusion Matrix:
+[[ 7336     0]
+ [    0 12664]]
+
+Feature Importances:
+  syllable_count: 0.4590
+  word_count: 0.1870
+  phonetic_score: 0.1221
+  charset_size: 0.0813
+  digit_ratio: 0.0761
+  crack_time_score: 0.0246
+  length: 0.0145
+  bigram_entropy: 0.0134
+  entropy: 0.0130
+  char_diversity: 0.0069
+  uppercase_ratio: 0.0008
+  has_repeated_chars: 0.0007
+  has_keyboard_walk: 0.0006
+  special_char_ratio: 0.0002
+  is_common_password: 0.0000

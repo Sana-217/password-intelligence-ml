@@ -1,29 +1,510 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-<div class="container">
-    <h2>Welcome, {{ user }}</h2>
+{% extends "base.html" %}
+{% block title %}Dashboard — PassGuard{% endblock %}
 
-    <form method="POST">
-        <input type="text" name="phrase" placeholder="Enter a phrase (e.g., my dog name is leo)" required>
-        <button type="submit">Generate Password</button>
-    </form>
+{% block content %}
+<div class="dashboard">
 
-    {% if password %}
-        <br>
-        <h3>Generated Password:</h3>
-        <p><strong>{{ password }}</strong></p>
+  <!-- ── Generator Panel ── -->
+  <section class="panel">
+    <h2>Generate Password</h2>
 
-        <p>Memorability: {{ memorability }}</p>
-        <p>Strength: {{ strength }}</p>
-    {% endif %}
+    <div class="mode-tabs">
+      <button class="tab active" data-mode="passphrase">Passphrase</button>
+      <button class="tab"        data-mode="pattern">Pattern</button>
+      <button class="tab"        data-mode="random">Random</button>
+    </div>
 
-    <br>
-    <a href="/logout" class="link-btn">Logout</a>
+    <div class="mode-options" id="opts-passphrase">
+      <label>Words
+        <input type="number" id="n_words" value="4" min="3" max="8">
+      </label>
+      <label>Separator
+        <input type="text" id="separator" value="-" maxlength="3">
+      </label>
+    </div>
+
+    <div class="mode-options hidden" id="opts-pattern">
+      <label>Pattern string
+        <input type="text" id="pattern" placeholder="e.g. Wwww-ddd-s">
+      </label>
+      <p class="hint">W=upper  w=lower  d=digit  s=special  *=any  other=literal</p>
+    </div>
+
+    <div class="mode-options hidden" id="opts-random">
+      <label>Length
+        <input type="number" id="rand_length" value="16" min="8" max="64">
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="use_special" checked> Include special chars
+      </label>
+    </div>
+
+    <button class="btn btn-primary" id="btn-generate">Generate</button>
+
+    <div class="result-box hidden" id="gen-result">
+      <div class="result-password" id="gen-password"></div>
+      <div class="result-badges">
+        <span class="badge" id="badge-strength"></span>
+        <span class="badge" id="badge-memory"></span>
+        <span class="badge badge-score" id="badge-score"></span>
+      </div>
+      <div class="result-actions">
+        <button class="btn btn-outline btn-sm" id="btn-copy-gen">Copy</button>
+        <button class="btn btn-outline btn-sm" id="btn-memory-gen">Memory Aid</button>
+        <button class="btn btn-outline btn-sm" id="btn-save-gen">Save to Vault</button>
+      </div>
+      <div class="candidates" id="candidates"></div>
+    </div>
+  </section>
+
+  <!-- ── Analyzer Panel ── -->
+  <section class="panel">
+    <h2>Analyze Password</h2>
+
+    <div class="input-row">
+      <input type="text" id="analyze-input" placeholder="Type any password to analyze...">
+      <button class="btn btn-primary" id="btn-analyze">Analyze</button>
+    </div>
+
+    <div id="analyze-placeholder" style="padding:1.2rem 0;">
+  <div style="font-size:.8rem;color:var(--muted);margin-bottom:.7rem;text-align:center;">
+    Try an example — click to analyze instantly:
+  </div>
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;justify-content:center;">
+    <span class="example-pwd">123456</span>
+    <span class="example-pwd">correct-horse-battery</span>
+    <span class="example-pwd">Mumbai@2019!</span>
+    <span class="example-pwd">password123</span>
+    <span class="example-pwd">xK9!mPq2Tz</span>
+  </div>
 </div>
-</body>
-</html>
+
+    <div class="result-box hidden" id="analyze-result">
+      <div class="meter-row">
+        <span>Strength</span>
+        <div class="meter"><div class="meter-fill" id="meter-strength"></div></div>
+        <span id="lbl-strength"></span>
+      </div>
+      <div class="meter-row">
+        <span>Memorability</span>
+        <div class="meter"><div class="meter-fill" id="meter-memory"></div></div>
+        <span id="lbl-memory"></span>
+      </div>
+      <div class="meter-row">
+        <span>Combined Score</span>
+        <div class="meter"><div class="meter-fill" id="meter-combined"></div></div>
+        <span id="lbl-combined"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Vault Panel ── -->
+  <section class="panel">
+    <h2>Password Vault <span class="count-badge">{{ count }}</span></h2>
+
+    <div class="vault-form">
+      <input type="text"     id="vault-label"    placeholder="Label (e.g. gmail)">
+      <input type="password" id="vault-password" placeholder="Password to store">
+      <button class="btn btn-primary btn-sm" id="btn-store">Store</button>
+    </div>
+
+    <div class="vault-form">
+      <input type="text" id="retrieve-label" placeholder="Label to retrieve">
+      <button class="btn btn-outline btn-sm" id="btn-retrieve">Retrieve</button>
+    </div>
+    <div class="retrieved-box hidden" id="retrieved-box">
+      <span id="retrieved-password"></span>
+      <button class="btn btn-sm" id="btn-copy-retrieved">Copy</button>
+    </div>
+
+    <div class="labels-list" id="labels-list">
+      {% for label in labels %}
+        <div class="label-item" data-label="{{ label }}">
+          <span>{{ label }}</span>
+          <div class="label-actions">
+            <button class="btn btn-sm btn-outline" onclick="quickRetrieve('{{ label }}')">Show</button>
+            <button class="btn btn-sm btn-danger"  onclick="deleteEntry('{{ label }}')">Delete</button>
+          </div>
+        </div>
+      {% else %}
+        <p class="empty-msg">No passwords stored yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- ── Stats + Tips Panel ── -->
+  <section class="panel">
+    <h2>Vault Overview</h2>
+
+    <!-- Stats row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem;">
+      <div style="background:var(--surface2);border:1px solid var(--border);
+                  border-radius:var(--radius);padding:1rem;text-align:center;">
+        <div style="font-size:2rem;font-weight:700;color:var(--primary2);">{{ count }}</div>
+        <div style="font-size:.78rem;color:var(--muted);margin-top:.2rem;">Stored passwords</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);
+                  border-radius:var(--radius);padding:1rem;text-align:center;">
+        <div style="font-size:2rem;font-weight:700;color:var(--success);">AES</div>
+        <div style="font-size:.78rem;color:var(--muted);margin-top:.2rem;">256-GCM encrypted</div>
+      </div>
+    </div>
+
+    <!-- Security tips -->
+    <div style="font-size:.8rem;color:var(--muted);margin-bottom:.6rem;font-weight:500;">
+      Security tips
+    </div>
+    <div style="display:flex;flex-direction:column;gap:.5rem;" id="tips-list">
+      <div class="tip-item">Use a passphrase as your master password — harder to crack, easier to remember</div>
+      <div class="tip-item">Never reuse passwords across sites — store each one separately in the vault</div>
+      <div class="tip-item">A 4-word passphrase has ~51 bits of entropy — stronger than most random passwords</div>
+      <div class="tip-item">Use Memory Aid to create a recall technique before storing a new password</div>
+    </div>
+
+    <!-- Quick actions -->
+    <div style="margin-top:1.5rem;display:flex;flex-direction:column;gap:.5rem;">
+      <div style="font-size:.8rem;color:var(--muted);margin-bottom:.2rem;font-weight:500;">Quick actions</div>
+      <button class="btn btn-outline btn-sm" style="justify-content:flex-start;"
+              onclick="window.location.href='/memory-aid'">
+        Open Memory Aid page
+      </button>
+      <button class="btn btn-outline btn-sm" style="justify-content:flex-start;"
+              onclick="document.getElementById('phrase-input').focus();
+                       document.getElementById('phrase-input').scrollIntoView({behavior:'smooth'})">
+        Try Phrase to Password
+      </button>
+      <button class="btn btn-outline btn-sm" style="justify-content:flex-start;"
+              onclick="document.getElementById('btn-generate').click()">
+        Generate a passphrase now
+      </button>
+    </div>
+  </section>
+
+  <!-- ── Passphrase Transformer Panel ── -->
+  <section class="panel" style="grid-column: 1 / -1;">
+    <h2>Phrase to Password
+      <span style="font-size:.75rem;color:var(--muted);font-weight:400;">— your core feature</span>
+    </h2>
+    <p style="color:var(--muted);font-size:.88rem;margin-bottom:1.2rem;">
+      Enter a phrase you already know. The system extracts meaningful words,
+      applies smart substitutions, and returns a secure password you can actually remember.
+    </p>
+
+    <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:.8rem;">
+      <input type="text" id="phrase-input"
+             placeholder="e.g. my dog name is Bruno"
+             style="flex:1;min-width:200px;background:var(--surface2);border:1px solid var(--border);
+                    color:var(--text);padding:.6rem 1rem;border-radius:8px;font-size:.95rem;">
+      <input type="number" id="year-input" placeholder="Year (optional, e.g. 2024)"
+             style="width:200px;background:var(--surface2);border:1px solid var(--border);
+                    color:var(--text);padding:.6rem 1rem;border-radius:8px;font-size:.95rem;">
+      <button class="btn btn-primary" id="btn-transform">Transform</button>
+    </div>
+
+    <div class="result-box hidden" id="transform-result">
+
+      <div style="margin-bottom:1rem;">
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.3rem;">Recommended password</div>
+        <div class="result-password" id="transform-password"></div>
+        <div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" id="btn-copy-transform">Copy</button>
+          <button class="btn btn-outline btn-sm" id="btn-memory-transform">Memory Aid</button>
+          <button class="btn btn-outline btn-sm" id="btn-save-transform">Save to Vault</button>
+        </div>
+      </div>
+
+      <div id="transform-scores" class="hidden" style="margin-bottom:1rem;">
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">ML Analysis</div>
+        <div class="meter-row">
+          <span>Strength</span>
+          <div class="meter"><div class="meter-fill" id="tm-strength"></div></div>
+          <span id="tm-lbl-strength"></span>
+        </div>
+        <div class="meter-row">
+          <span>Memorability</span>
+          <div class="meter"><div class="meter-fill" id="tm-memory"></div></div>
+          <span id="tm-lbl-memory"></span>
+        </div>
+        <div class="meter-row">
+          <span>Combined Score</span>
+          <div class="meter"><div class="meter-fill" id="tm-combined"></div></div>
+          <span id="tm-lbl-combined"></span>
+        </div>
+      </div>
+
+      <div style="margin-bottom:1rem;">
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">How it was built</div>
+        <div id="transform-pipeline"
+             style="background:var(--surface2);border-radius:8px;padding:.8rem 1rem;
+                    font-size:.82rem;line-height:1.9;font-family:monospace;"></div>
+      </div>
+
+      <div>
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">Alternative variants</div>
+        <div id="transform-candidates"></div>
+      </div>
+
+    </div>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── mode tabs ──────────────────────────────────────────────────────
+let currentMode = "passphrase";
+
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".mode-options").forEach(o => o.classList.add("hidden"));
+    btn.classList.add("active");
+    currentMode = btn.dataset.mode;
+    document.getElementById(`opts-${currentMode}`).classList.remove("hidden");
+  });
+});
+
+// ── generate ───────────────────────────────────────────────────────
+document.getElementById("btn-generate").addEventListener("click", async () => {
+  const btn = document.getElementById("btn-generate");
+  btn.textContent = "Generating...";
+  btn.disabled = true;
+
+  const payload = { mode: currentMode, n_candidates: 5 };
+  if (currentMode === "passphrase") {
+    payload.n_words   = parseInt(document.getElementById("n_words").value);
+    payload.separator = document.getElementById("separator").value || "-";
+  } else if (currentMode === "pattern") {
+    payload.pattern = document.getElementById("pattern").value;
+  } else {
+    payload.length      = parseInt(document.getElementById("rand_length").value);
+    payload.use_special = document.getElementById("use_special").checked;
+  }
+
+  const res = await postJSON("/generate", payload);
+  btn.textContent = "Generate";
+  btn.disabled = false;
+
+  if (!res.success) { showToast(res.error, "error"); return; }
+
+  document.getElementById("gen-password").textContent = res.password;
+  setBadge("badge-strength", res.strength_label);
+  setBadge("badge-memory",   res.memorability_label);
+  document.getElementById("badge-score").textContent =
+    `Score: ${(res.combined_score * 100).toFixed(0)}%`;
+
+  const cands = document.getElementById("candidates");
+  cands.innerHTML = "<p class='cands-title'>All candidates:</p>" +
+    res.all_candidates.map((c, i) =>
+      `<div class="cand-row ${i===0?'cand-best':''}">
+        <span class="cand-pwd">${c.password}</span>
+        <span class="cand-score">${(c.score*100).toFixed(0)}% · ${c.strength}</span>
+      </div>`
+    ).join("");
+
+  document.getElementById("gen-result").classList.remove("hidden");
+
+  document.getElementById("btn-copy-gen").onclick = () =>
+    copyToClipboard(res.password, document.getElementById("btn-copy-gen"));
+
+  document.getElementById("btn-memory-gen").onclick = () =>
+    window.location.href = `/memory-aid?password=${encodeURIComponent(res.password)}`;
+
+  document.getElementById("btn-save-gen").onclick = () => {
+    document.getElementById("vault-password").value = res.password;
+    document.getElementById("vault-label").focus();
+    showToast("Password filled — add a label and click Store.", "success");
+  };
+});
+
+// ── analyze ────────────────────────────────────────────────────────
+document.getElementById("btn-analyze").addEventListener("click", async () => {
+  const pwd = document.getElementById("analyze-input").value.trim();
+  if (!pwd) return;
+  const res = await postJSON("/analyze", { password: pwd });
+  if (!res.success) { showToast(res.error, "error"); return; }
+  document.getElementById("analyze-placeholder").style.display = "none";
+  setMeter("meter-strength", "lbl-strength", res.strength_proba,    res.strength_label);
+  setMeter("meter-memory",   "lbl-memory",   res.memorability_proba, res.memorability_label);
+  setMeter("meter-combined", "lbl-combined", res.combined_score,    `${(res.combined_score*100).toFixed(0)}%`);
+  document.getElementById("analyze-result").classList.remove("hidden");
+});
+
+// ── example chips ──────────────────────────────────────────────────
+document.querySelectorAll(".example-pwd").forEach(chip => {
+  chip.addEventListener("click", async () => {
+    const pwd = chip.textContent;
+    document.getElementById("analyze-input").value = pwd;
+    document.getElementById("analyze-placeholder").style.display = "none";
+    const res = await postJSON("/analyze", { password: pwd });
+    if (!res.success) { showToast(res.error, "error"); return; }
+    setMeter("meter-strength", "lbl-strength", res.strength_proba,    res.strength_label);
+    setMeter("meter-memory",   "lbl-memory",   res.memorability_proba, res.memorability_label);
+    setMeter("meter-combined", "lbl-combined", res.combined_score,    `${(res.combined_score*100).toFixed(0)}%`);
+    document.getElementById("analyze-result").classList.remove("hidden");
+  });
+});
+
+// ── hide placeholder on focus ──────────────────────────────────────
+document.getElementById("analyze-input").addEventListener("focus", () => {
+  document.getElementById("analyze-placeholder").style.display = "none";
+});
+
+// ── live analysis as user types ────────────────────────────────────
+document.getElementById("analyze-input").addEventListener("input", async (e) => {
+  if (e.target.value.length < 3) return;
+  clearTimeout(window._analyzeTimer);
+  window._analyzeTimer = setTimeout(async () => {
+    const res = await postJSON("/analyze", { password: e.target.value });
+    if (!res.success) return;
+    document.getElementById("analyze-placeholder").style.display = "none";
+    setMeter("meter-strength", "lbl-strength", res.strength_proba,    res.strength_label);
+    setMeter("meter-memory",   "lbl-memory",   res.memorability_proba, res.memorability_label);
+    setMeter("meter-combined", "lbl-combined", res.combined_score,    `${(res.combined_score*100).toFixed(0)}%`);
+    document.getElementById("analyze-result").classList.remove("hidden");
+  }, 400);
+});
+
+// ── vault: store ───────────────────────────────────────────────────
+document.getElementById("btn-store").addEventListener("click", async () => {
+  const label    = document.getElementById("vault-label").value.trim();
+  const password = document.getElementById("vault-password").value.trim();
+  if (!label || !password) { showToast("Label and password required.", "error"); return; }
+  const res = await postJSON("/store", { label, password });
+  if (!res.success) { showToast(res.error, "error"); return; }
+  showToast(`'${label}' stored securely.`, "success");
+  document.getElementById("vault-label").value    = "";
+  document.getElementById("vault-password").value = "";
+  addLabelToList(label);
+});
+
+// ── vault: retrieve ────────────────────────────────────────────────
+document.getElementById("btn-retrieve").addEventListener("click", async () => {
+  const label = document.getElementById("retrieve-label").value.trim();
+  if (!label) return;
+  await retrieveAndShow(label);
+});
+
+async function quickRetrieve(label) {
+  document.getElementById("retrieve-label").value = label;
+  await retrieveAndShow(label);
+}
+
+async function retrieveAndShow(label) {
+  const res = await postJSON("/retrieve", { label });
+  if (!res.success) { showToast(res.error, "error"); return; }
+  document.getElementById("retrieved-password").textContent = res.password;
+  document.getElementById("retrieved-box").classList.remove("hidden");
+  document.getElementById("btn-copy-retrieved").onclick = () =>
+    copyToClipboard(res.password, document.getElementById("btn-copy-retrieved"));
+}
+
+// ── vault: delete ──────────────────────────────────────────────────
+async function deleteEntry(label) {
+  if (!confirm(`Delete '${label}'? This cannot be undone.`)) return;
+  const res = await postJSON("/delete", { label });
+  if (!res.success) { showToast(res.error, "error"); return; }
+  showToast(`'${label}' deleted.`, "success");
+  document.querySelector(`.label-item[data-label="${label}"]`)?.remove();
+}
+
+// ── helpers ────────────────────────────────────────────────────────
+function setBadge(id, label) {
+  const el  = document.getElementById(id);
+  const map = {
+    strong: "badge-strong", medium: "badge-medium", weak: "badge-weak",
+    memorable: "badge-mem", not_memorable: "badge-notmem",
+  };
+  el.textContent = label;
+  el.className   = `badge ${map[label] || ""}`;
+}
+
+function setMeter(meterId, labelId, value, text) {
+  const fill  = document.getElementById(meterId);
+  const label = document.getElementById(labelId);
+  const pct   = Math.round(value * 100);
+  fill.style.width      = pct + "%";
+  fill.style.background = pct >= 70 ? "#2ecc71" : pct >= 40 ? "#f39c12" : "#e74c3c";
+  label.textContent     = text;
+}
+
+function addLabelToList(label) {
+  const list  = document.getElementById("labels-list");
+  const empty = list.querySelector(".empty-msg");
+  if (empty) empty.remove();
+  const div = document.createElement("div");
+  div.className     = "label-item";
+  div.dataset.label = label;
+  div.innerHTML = `
+    <span>${label}</span>
+    <div class="label-actions">
+      <button class="btn btn-sm btn-outline" onclick="quickRetrieve('${label}')">Show</button>
+      <button class="btn btn-sm btn-danger"  onclick="deleteEntry('${label}')">Delete</button>
+    </div>`;
+  list.prepend(div);
+}
+
+// ── passphrase transformer ─────────────────────────────────────────
+document.getElementById("btn-transform").addEventListener("click", async () => {
+  const phrase = document.getElementById("phrase-input").value.trim();
+  const year   = document.getElementById("year-input").value.trim();
+  if (!phrase) { showToast("Please enter a phrase.", "error"); return; }
+
+  const btn = document.getElementById("btn-transform");
+  btn.textContent = "Transforming...";
+  btn.disabled    = true;
+
+  const payload = { phrase };
+  if (year) payload.year = year;
+
+  const res = await postJSON("/transform", payload);
+  btn.textContent = "Transform";
+  btn.disabled    = false;
+
+  if (!res.success) { showToast(res.error, "error"); return; }
+
+  document.getElementById("transform-password").textContent = res.password;
+
+  const p = res.pipeline;
+  document.getElementById("transform-pipeline").innerHTML =
+    `Phrase entered  : "${p.original_phrase}"<br>` +
+    `Filler removed  : kept → [${p.filtered_words.join(", ")}]<br>` +
+    `Anchor words    : [${p.anchor_words.join(", ")}]<br>` +
+    `Substitution    : ${p.substitution}<br>` +
+    `Core built      : ${p.core}<br>` +
+    `Suffix added    : ${p.numeric_suffix}${p.special_char}<br>` +
+    `Final password  : <strong style="color:var(--primary2)">${p.final}</strong>`;
+
+  if (res.ml_scores) {
+    const s = res.ml_scores;
+    setMeter("tm-strength", "tm-lbl-strength", s.strength_proba,     s.strength_label);
+    setMeter("tm-memory",   "tm-lbl-memory",   s.memorability_proba, s.memorability_label);
+    setMeter("tm-combined", "tm-lbl-combined", s.combined_score,     `${(s.combined_score*100).toFixed(0)}%`);
+    document.getElementById("transform-scores").classList.remove("hidden");
+  }
+
+  const cands = document.getElementById("transform-candidates");
+  cands.innerHTML = res.candidates.map((c, i) =>
+    `<div class="cand-row ${i===0?'cand-best':''}">
+      <span class="cand-pwd">${c}</span>
+      ${i===0 ? '<span class="cand-score">recommended</span>' : ''}
+    </div>`
+  ).join("");
+
+  document.getElementById("transform-result").classList.remove("hidden");
+
+  document.getElementById("btn-copy-transform").onclick = () =>
+    copyToClipboard(res.password, document.getElementById("btn-copy-transform"));
+
+  document.getElementById("btn-memory-transform").onclick = () =>
+    window.location.href = `/memory-aid?password=${encodeURIComponent(res.password)}`;
+
+  document.getElementById("btn-save-transform").onclick = () => {
+    document.getElementById("vault-password").value = res.password;
+    document.getElementById("vault-label").focus();
+    showToast("Password filled — add a label and click Store.", "success");
+  };
+});
+</script>
+{% endblock %}

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Memory Aid — PassGuard{% endblock %}
+
+{% block content %}
+<div class="memory-page">
+  <h2>Memory Aid</h2>
+
+  <form method="GET" action="{{ url_for('memory_aid') }}" class="memory-form">
+    <input type="text" name="password" value="{{ password or '' }}"
+           placeholder="Enter a password to get memory techniques" required>
+    <button type="submit" class="btn btn-primary">Generate Aids</button>
+  </form>
+
+  {% if aids %}
+  <div class="aids-grid">
+
+    <!-- Chunking -->
+    <div class="aid-card">
+      <h3>Chunking</h3>
+      <div class="aid-display chunk-display">{{ aids.chunking.display }}</div>
+      <p>{{ aids.chunking.description }}</p>
+    </div>
+
+    <!-- Phonetic -->
+    <div class="aid-card">
+      <h3>Phonetic Encoding</h3>
+      <div class="aid-display phonetic-display">{{ aids.phonetic.grouped }}</div>
+      <p>Say this aloud 3 times. Your phonological loop encodes it automatically.</p>
+    </div>
+
+    <!-- Acronym -->
+    <div class="aid-card">
+      <h3>Acronym Sentence</h3>
+      <div class="aid-display">{{ aids.acronym.sentence }}</div>
+      <p>{{ aids.acronym.reverse_tip }}</p>
+    </div>
+
+    <!-- Visual Story -->
+    <div class="aid-card aid-card-wide">
+      <h3>Visual Story</h3>
+      <div class="aid-display story-display">{{ aids.story.story }}</div>
+      <p>{{ aids.story.description }}</p>
+    </div>
+
+    <!-- Recommendation -->
+    <div class="aid-card aid-card-wide aid-recommend">
+      <h3>Recommendation</h3>
+      <p>{{ aids.summary }}</p>
+    </div>
+
+  </div>
+
+  <!-- Sentence → Password reverse tool -->
+  <div class="panel reverse-panel">
+    <h3>Reverse: Your Sentence → Password</h3>
+    <p>Think of a personal sentence. We extract the first character of each word into a password.</p>
+    <div class="input-row">
+      <input type="text" id="sentence-input"
+             placeholder="e.g. My dog Rocket jumped over 7 fences last Tuesday!">
+      <button class="btn btn-primary" id="btn-from-sentence">Convert</button>
+    </div>
+    <div class="result-box hidden" id="sentence-result">
+      <div class="result-password" id="sentence-password"></div>
+      <button class="btn btn-outline btn-sm" id="btn-copy-sentence">Copy</button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("btn-from-sentence")?.addEventListener("click", async () => {
+  const sentence = document.getElementById("sentence-input").value.trim();
+  if (!sentence) return;
+
+  const res = await postJSON("/sentence-to-password", { sentence });
+  if (!res.success) { showToast(res.error, "error"); return; }
+
+  document.getElementById("sentence-password").textContent = res.password;
+  document.getElementById("sentence-result").classList.remove("hidden");
+
+  document.getElementById("btn-copy-sentence").onclick = () =>
+    copyToClipboard(res.password, document.getElementById("btn-copy-sentence"));
+
+  showToast(`Password generated: ${res.password}`, "success");
+});
+</script>
+{% endblock %}

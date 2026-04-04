@@ -1,16 +1,43 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Password Intelligence</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <div class="container">
-        <h1>AI Based Secure And Memorable Password Generator</h1>
-        <p>Generate secure and memorable passwords powered by ML & cryptography.</p>
-        <a href="/login" class="btn">Login</a>
-        <br><br>
-        <a href="/register" class="link-btn">Create an account</a>
-    </div>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}PassGuard — AI Password Security{% endblock %}
+
+{% block content %}
+<div class="hero">
+  <h1>AI-Based Secure &amp; Memorable Passwords</h1>
+  <p class="hero-sub">
+    Combines Machine Learning, Linguistic Analysis, and Cryptography
+    to generate passwords that are both strong and memorable.
+  </p>
+  <div class="hero-actions">
+    {% if session.get('logged_in') %}
+      <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Go to Dashboard</a>
+    {% else %}
+      <a href="{{ url_for('register') }}" class="btn btn-primary">Get Started</a>
+      <a href="{{ url_for('login') }}"    class="btn btn-outline">Login</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="features">
+  <div class="feature-card">
+    <div class="feature-icon">ML</div>
+    <h3>ML Strength Scoring</h3>
+    <p>Random Forest classifier trained on 100,000 real passwords from the RockYou dataset rates every password.</p>
+  </div>
+  <div class="feature-card">
+    <div class="feature-icon">MEM</div>
+    <h3>Memorability Prediction</h3>
+    <p>A second ML model measures cognitive recall using syllable count, phonetic score, and word familiarity.</p>
+  </div>
+  <div class="feature-card">
+    <div class="feature-icon">AES</div>
+    <h3>Zero-Knowledge Vault</h3>
+    <p>Passwords are encrypted with Argon2id + AES-256-GCM. Your master password is never stored anywhere.</p>
+  </div>
+  <div class="feature-card">
+    <div class="feature-icon">MNM</div>
+    <h3>Memory Aids</h3>
+    <p>Chunking, phonetic encoding, visual stories, and acronym techniques help you actually remember passwords.</p>
+  </div>
+</div>
+{% endblock %}

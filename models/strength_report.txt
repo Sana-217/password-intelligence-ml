@@ -1,0 +1,35 @@
+Strength Model — Classification Report
+==================================================
+Overall Accuracy: 0.8155
+
+              precision    recall  f1-score   support
+
+        weak     0.9856    0.8117    0.8903     17851
+      medium     0.3506    0.8531    0.4970      2097
+      strong     0.1523    0.5769    0.2410        52
+
+    accuracy                         0.8155     20000
+   macro avg     0.4962    0.7473    0.5427     20000
+weighted avg     0.9169    0.8155    0.8473     20000
+
+Confusion Matrix:
+[[14490  3292    69]
+ [  210  1789    98]
+ [    1    21    30]]
+
+Feature Importances:
+  length: 0.2644
+  bigram_entropy: 0.1879
+  crack_time_score: 0.1761
+  entropy: 0.0766
+  word_count: 0.0639
+  phonetic_score: 0.0592
+  digit_ratio: 0.0507
+  syllable_count: 0.0497
+  char_diversity: 0.0404
+  charset_size: 0.0209
+  uppercase_ratio: 0.0052
+  special_char_ratio: 0.0019
+  has_keyboard_walk: 0.0018
+  has_repeated_chars: 0.0012
+  is_common_password: 0.0000
