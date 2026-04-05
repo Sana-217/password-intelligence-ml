@@ -175,18 +175,7 @@ def _get_wordlist() -> list[str]:
 def score_password(password: str) -> dict:
     """
     Runs a password through both ML models and returns a structured result.
-
-    Returns:
-        {
-          "password":           "correct-horse-battery",
-          "strength_label":     "strong",
-          "strength_int":       2,
-          "strength_proba":     0.91,
-          "memorability_label": "memorable",
-          "memorability_int":   1,
-          "memorability_proba": 0.87,
-          "combined_score":     0.893,
-        }
+    Includes a hard rule override to fix false positives on random strings.
     """
     str_model, mem_model = _get_models()
     features = extract_feature_vector(password)
@@ -203,9 +192,10 @@ def score_password(password: str) -> dict:
     mem_confidence = float(mem_proba[1])
     mem_labels     = {0: "not_memorable", 1: "memorable"}
 
-    # Hard rule: override model if no real words and no syllables
+    # Hard rule: if zero real words AND fewer than 2 syllables
+    # → cannot be memorable regardless of what model predicts
     # Fixes false positives on purely random strings like "7K+NAAY61OKZRN#e"
-    if get_word_count(password) == 0 and get_syllable_count(password) < 2:
+    if get_word_count(password) == 0 and get_syllable_count(password) < 3:
         mem_int        = 0
         mem_confidence = 0.1
 
@@ -224,7 +214,6 @@ def score_password(password: str) -> dict:
         "memorability_proba": round(mem_confidence, 4),
         "combined_score":     round(combined, 4),
     }
-
 
 
 # ── mode 1: passphrase ────────────────────────────────────────────────────────
