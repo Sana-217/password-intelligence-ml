@@ -38,14 +38,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from functools import wraps
 from generator.passphrase_transformer import transform_with_scores
-
 from flask import (
     Flask, render_template, request, redirect,
     url_for, session, jsonify, flash,
 )
-
-
-
+from datetime import timedelta
 from generator.password_gen  import generate_best, score_password
 from generator.memory_aid    import generate_memory_aids, sentence_to_password
 from security.storage        import (
@@ -62,6 +59,19 @@ from security.storage        import (
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = "change-this-in-production-use-secrets-module"
+
+
+app.config["SESSION_PERMANENT"]        = False
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
+
+@app.before_request
+def clear_stale_session():
+    """Force logout if session has no master password loaded."""
+    protected = ["dashboard", "generate", "analyze", "store",
+                 "retrieve", "delete", "memory_aid", "transform", "enhance"]
+    if request.endpoint in protected:
+        if not session.get("logged_in") or not session.get("master"):
+            session.clear()
 app.config["SESSION_PERMANENT"] = False
 
 
@@ -656,7 +666,9 @@ def from_sentence():
     except Exception as e:
         return _json_error(str(e))
 
-
+@app.route("/logout-beacon", methods=["POST"])
+def logout_beacon():
+    return "", 204   # do nothing — session timeout handles cleanup
 # ── run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@
     {% endif %}
   </div>
 </nav>
+
 <main class="container">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
@@ -37,7 +38,6 @@
 </main>
 
 <script>
-// Global AJAX helper — used by all pages
 async function postJSON(url, data) {
   const res = await fetch(url, {
     method:  "POST",
@@ -65,5 +65,6 @@ function showToast(message, type = "success") {
 </script>
 
 {% block scripts %}{% endblock %}
+
 </body>
 </html>
