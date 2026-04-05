@@ -23,3 +23,5 @@ models/*.joblib
 secure_store.json
 
 vault_meta.json
+
+.ipynb_checkpoints/
