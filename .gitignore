@@ -25,3 +25,10 @@ secure_store.json
 vault_meta.json
 
 .ipynb_checkpoints/
+
+# Notebook checkpoints
+notebooks/.ipynb_checkpoints/
+
+# Windows files
+Thumbs.db
+desktop.ini

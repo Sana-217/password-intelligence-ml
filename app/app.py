@@ -42,6 +42,7 @@ from flask import (
     Flask, render_template, request, redirect,
     url_for, session, jsonify, flash,
 )
+import os
 from datetime import timedelta
 from generator.password_gen  import generate_best, score_password
 from generator.memory_aid    import generate_memory_aids, sentence_to_password
@@ -54,6 +55,14 @@ from security.storage        import (
     EntryAlreadyExistsError,
     VaultError,
 )
+from preprocessing.feature_extraction import (
+    get_length, get_shannon_entropy, get_charset_size,
+    get_word_count, get_syllable_count, get_has_keyboard_walk,
+    get_has_repeated_chars, get_is_common_password,
+    get_special_char_ratio, get_uppercase_ratio, get_digit_ratio,
+)
+import secrets
+import string
 
 # ── app factory ───────────────────────────────────────────────────────────────
 
@@ -72,7 +81,7 @@ def clear_stale_session():
     if request.endpoint in protected:
         if not session.get("logged_in") or not session.get("master"):
             session.clear()
-app.config["SESSION_PERMANENT"] = False
+
 
 
 # ── login required decorator ──────────────────────────────────────────────────
@@ -193,11 +202,13 @@ def login():
         flash(f"Error: {e}", "danger")
         return render_template("login.html")
 
+
 @app.route("/logout")
 def logout():
     session.clear()
     flash("Logged out successfully.", "success")
     return redirect(url_for("login"))
+
 
 @app.route("/get-hint")
 def get_hint():
@@ -210,7 +221,6 @@ def get_hint():
 
 @app.route("/reset-vault", methods=["POST"])
 def reset_vault():
-    import os
     vault_file = ROOT / "vault.json"
     meta_file  = ROOT / "vault_meta.json"
     try:
@@ -392,14 +402,8 @@ def enhance():
         return _json_error("Password cannot be empty.")
 
     try:
-        from preprocessing.feature_extraction import (
-            get_length, get_shannon_entropy, get_charset_size,
-            get_word_count, get_syllable_count, get_has_keyboard_walk,
-            get_has_repeated_chars, get_is_common_password,
-            get_special_char_ratio, get_uppercase_ratio, get_digit_ratio,
-        )
-        import secrets as _sec
-        import string as _str
+        
+        
 
         suggestions = []
         enhanced    = password
@@ -434,13 +438,13 @@ def enhance():
             })
 
         if get_charset_size(password) < 36:
-            if not any(c in _str.ascii_uppercase for c in password):
+            if not any(c in string.ascii_uppercase for c in password):
                 suggestions.append({
                     "issue": "No uppercase letters",
                     "fix":   "Capitalise at least one word or add an uppercase letter",
                     "type":  "warning",
                 })
-            if not any(c in _str.digits for c in password):
+            if not any(c in string.digits for c in password):
                 suggestions.append({
                     "issue": "No digits",
                     "fix":   "Add 2–3 numbers — avoid predictable ones like 123",
@@ -498,9 +502,6 @@ def _build_enhanced(password: str) -> str:
     targeted enhancements. Preserves the original structure
     so the user still recognises it.
     """
-    import secrets as _sec
-    import string  as _str
-
     enhanced = password
 
     # 1. Capitalise first letter if all lowercase
@@ -508,17 +509,17 @@ def _build_enhanced(password: str) -> str:
         enhanced = enhanced.capitalize()
 
     # 2. Add a special character if missing
-    if not any(c in _str.punctuation for c in enhanced):
-        enhanced += _sec.choice("!@#$&*")
+    if not any(c in string.punctuation for c in enhanced):
+        enhanced += secrets.choice("!@#$&*")
 
     # 3. Add digits if missing
     if not any(c.isdigit() for c in enhanced):
-        enhanced += str(_sec.randbelow(90) + 10)  # 10–99
+        enhanced += str(secrets.randbelow(90) + 10)  # 10–99
 
     # 4. If still too short, append a random word fragment
     if len(enhanced) < 12:
         fragments = ["Sky", "Fox", "Blaze", "Nova", "Crypt", "Storm"]
-        enhanced += _sec.choice(fragments)
+        enhanced += secrets.choice(fragments)
 
     # 5. If still no uppercase mid-word, capitalise a random vowel position
     if not any(c.isupper() for c in enhanced[1:]):
@@ -527,7 +528,7 @@ def _build_enhanced(password: str) -> str:
             if c.lower() in "aeiou" and i > 0
         ]
         if vowel_positions:
-            pos      = _sec.choice(vowel_positions)
+            pos      = secrets.choice(vowel_positions)
             enhanced = enhanced[:pos] + enhanced[pos].upper() + enhanced[pos+1:]
 
     return enhanced

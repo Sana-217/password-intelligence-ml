@@ -16,5 +16,11 @@ argon2-cffi
 # Web
 flask
 
+# Visualization / notebook
+matplotlib
+seaborn
+jupyter
+notebook
+
 # Dev
 pytest

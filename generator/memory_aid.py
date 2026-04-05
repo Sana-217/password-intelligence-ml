@@ -36,6 +36,7 @@ It works immediately after installation.
 
 import re
 import sys
+import secrets
 import string
 from pathlib import Path
 from typing import Optional
@@ -298,14 +299,12 @@ def generate_acronym_sentence(password: str) -> dict:
         "z": ["zero", "zone", "zenith", "zinc", "zeal"],
     }
 
-    import secrets as _secrets
-
     words = []
     for char in password:
         if char.isalpha():
             key  = char.lower()
             bank = word_bank.get(key, [char])
-            word = _secrets.choice(bank)
+            word = secrets.choice(bank)
             # Capitalise if original char was uppercase
             if char.isupper():
                 word = word.capitalize()
@@ -379,8 +378,6 @@ def generate_visual_story(password: str, max_chars: int = 12) -> dict:
     # Use first max_chars characters only — stories get unwieldy beyond ~12
     pwd_slice = password[:max_chars]
     remainder = len(password) - len(pwd_slice)
-
-    import secrets as _secrets
 
     scenes = []
     for char in pwd_slice:
@@ -549,7 +546,6 @@ def sentence_to_password(
         result = sentence_to_password("My cat Whiskers ate 3 fish on Tuesday!")
         print(result["password"])  # → "McWa3foT!47"  (or similar)
     """
-    import secrets as _s
 
     words = sentence.strip().split()
     breakdown = []
@@ -566,7 +562,7 @@ def sentence_to_password(
     # Append random digits
     digit_suffix = ""
     for _ in range(append_digits):
-        d = _s.choice(string.digits)
+        d = secrets.choice(string.digits)
         chars.append(d)
         digit_suffix += d
 
