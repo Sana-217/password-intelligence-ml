@@ -90,18 +90,18 @@ pip install -r requirements.txt
 
 # 2. Download RockYou dataset and place at dataset/rockyou.txt
 
-# 3. Train ML models (run once, ~5 minutes)
+# 3. Train ML models (run once, ~5 minutes each)
 python models/train_strength.py
 python models/train_memorability.py
 
-# 4. Run evaluation
+# 4. Run evaluation (optional — generates report)
 python evaluation/metrics.py
 
 # 5. Start the web app
 python app/app.py
 ```
 
-Open `http://127.0.0.1:5000` in your browser.
+Open `http://127.0.0.1:5000` — register with your name, a master password, and an optional hint.
 
 ## Model Performance
 
