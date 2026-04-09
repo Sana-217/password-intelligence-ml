@@ -1,0 +1,1 @@
+"""Security — Argon2id key derivation, AES-256-GCM encryption, vault storage."""

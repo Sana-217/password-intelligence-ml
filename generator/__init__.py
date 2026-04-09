@@ -1,0 +1,1 @@
+"""Generator — password generation, phrase transformation, and memory aids."""
