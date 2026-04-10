@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PassGuard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 360px;
+      min-height: 200px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      background: #0f1117;
+      color: #e8eaf0;
+    }
+
+    /* ── header ── */
+    .header {
+      background: #1a1d27;
+      border-bottom: 1px solid #2e3148;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header-logo {
+      font-size: 15px;
+      font-weight: 700;
+      color: #7c6af7;
+      letter-spacing: -0.3px;
+    }
+    .header-badge {
+      font-size: 9px;
+      background: #2a2640;
+      color: #7c6af7;
+      border: 1px solid #7c6af7;
+      padding: 1px 6px;
+      border-radius: 20px;
+    }
+    .server-status {
+      margin-left: auto;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #888;
+    }
+    .dot.online  { background: #2ecc71; }
+    .dot.offline { background: #e74c3c; }
+
+    /* ── tabs ── */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #2e3148;
+      background: #13161f;
+    }
+    .tab {
+      flex: 1;
+      padding: 8px 0;
+      text-align: center;
+      font-size: 11px;
+      color: #888;
+      cursor: pointer;
+      border: none;
+      background: none;
+      border-bottom: 2px solid transparent;
+      transition: all .15s;
+    }
+    .tab.active {
+      color: #7c6af7;
+      border-bottom-color: #7c6af7;
+    }
+
+    /* ── body ── */
+    .panel { padding: 12px 14px; display: none; }
+    .panel.active { display: block; }
+
+    label {
+      display: block;
+      font-size: 10px;
+      color: #888;
+      margin-bottom: 4px;
+      margin-top: 10px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    label:first-child { margin-top: 0; }
+
+    input[type=text], input[type=password], input[type=number] {
+      width: 100%;
+      padding: 7px 10px;
+      background: #1a1d27;
+      border: 1px solid #2e3148;
+      border-radius: 6px;
+      color: #e8eaf0;
+      font-size: 12px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus { border-color: #7c6af7; }
+
+    .row { display: flex; gap: 8px; }
+    .row input { flex: 1; }
+
+    /* ── buttons ── */
+    .btn {
+      width: 100%;
+      padding: 8px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s;
+      margin-top: 10px;
+    }
+    .btn:disabled { opacity: .5; cursor: default; }
+    .btn-primary  { background: #7c6af7; color: #fff; }
+    .btn-outline  {
+      background: transparent;
+      border: 1px solid #2e3148;
+      color: #e8eaf0;
+    }
+    .btn-sm {
+      width: auto;
+      padding: 5px 10px;
+      font-size: 11px;
+      margin-top: 0;
+    }
+    .btn-success { background: #2ecc71; color: #fff; }
+
+    /* ── result box ── */
+    .result-box {
+      background: #1a1d27;
+      border: 1px solid #2e3148;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-top: 10px;
+    }
+    .result-label {
+      font-size: 9px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 4px;
+    }
+    .result-password {
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      font-weight: 700;
+      color: #7c6af7;
+      word-break: break-all;
+      letter-spacing: .5px;
+    }
+
+    .result-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    /* ── meter ── */
+    .meter-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 10px;
+      color: #888;
+    }
+    .meter-row span:first-child { min-width: 72px; }
+    .meter {
+      flex: 1;
+      height: 4px;
+      background: #2e3148;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .meter-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width .3s;
+      width: 0%;
+    }
+    .meter-row span:last-child { min-width: 36px; text-align: right; }
+
+    /* ── pipeline ── */
+    .pipeline {
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      line-height: 1.8;
+      color: #aaa;
+      background: #13161f;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-top: 8px;
+    }
+    .pipeline strong { color: #7c6af7; }
+
+    /* ── candidates ── */
+    .candidates { margin-top: 8px; }
+    .cand-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 8px;
+      background: #13161f;
+      border-radius: 5px;
+      margin-bottom: 4px;
+      font-size: 11px;
+      font-family: monospace;
+    }
+    .cand-pwd { color: #ccc; }
+    .cand-use {
+      font-size: 10px;
+      color: #7c6af7;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+    .cand-use:hover { text-decoration: underline; }
+
+    /* ── vault panel ── */
+    .vault-entry {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      background: #1a1d27;
+      border: 1px solid #2e3148;
+      border-radius: 6px;
+      margin-bottom: 5px;
+    }
+    .vault-label { font-size: 12px; }
+    .vault-pwd   { font-family: monospace; font-size: 11px; color: #888; }
+
+    /* ── toast ── */
+    .toast {
+      position: fixed;
+      bottom: 10px; left: 14px; right: 14px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      text-align: center;
+      opacity: 0;
+      transition: opacity .2s;
+      pointer-events: none;
+      z-index: 999;
+    }
+    .toast.show { opacity: 1; }
+    .toast.success { background: #2ecc71; color: #fff; }
+    .toast.error   { background: #e74c3c; color: #fff; }
+    .toast.info    { background: #3b82f6; color: #fff; }
+
+    /* ── offline notice ── */
+    .offline-notice {
+      padding: 16px 14px;
+      text-align: center;
+      color: #888;
+    }
+    .offline-notice .icon { font-size: 28px; margin-bottom: 8px; }
+    .offline-notice p { font-size: 12px; line-height: 1.6; }
+    .offline-notice code {
+      background: #1a1d27;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: #7c6af7;
+    }
+
+    .hidden { display: none !important; }
+    .divider {
+      height: 1px;
+      background: #2e3148;
+      margin: 12px 0;
+    }
+    .hint { font-size: 10px; color: #666; margin-top: 3px; }
+  </style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<div class="header">
+  <span class="header-logo">PassGuard</span>
+  <span class="header-badge">AI</span>
+  <div class="server-status">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text" style="color:#888">checking...</span>
+  </div>
+</div>
+
+<!-- ── OFFLINE NOTICE (shown when Flask not running) ── -->
+<div class="offline-notice hidden" id="offline-notice">
+  <div class="icon">⚡</div>
+  <p>PassGuard server is not running.<br>
+  Start it with:<br>
+  <code>python app/app.py</code><br><br>
+  Then click the extension again.</p>
+</div>
+
+<!-- ── TABS ── -->
+<div class="tabs" id="main-tabs">
+  <button class="tab active" data-tab="transform">Phrase → Password</button>
+  <button class="tab"        data-tab="generate">Generate</button>
+  <button class="tab"        data-tab="vault">Vault</button>
+</div>
+
+<!-- ══ PANEL: PHRASE TO PASSWORD ══ -->
+<div class="panel active" id="tab-transform">
+
+  <label>Your personal phrase</label>
+  <input type="text" id="phrase-input"
+         placeholder="e.g. my dog name is Bruno"/>
+
+  <div class="row" style="margin-top:8px;">
+    <div style="flex:1">
+      <label>Year (optional)</label>
+      <input type="number" id="year-input" placeholder="e.g. 2024"/>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="btn-transform">Transform</button>
+
+  <!-- Result -->
+  <div class="result-box hidden" id="transform-result">
+    <div class="result-label">Recommended password</div>
+    <div class="result-password" id="transform-password"></div>
+
+    <div class="result-actions">
+      <button class="btn btn-outline btn-sm" id="btn-copy-transform">Copy</button>
+      <button class="btn btn-outline btn-sm" id="btn-fill-transform">Fill on page</button>
+      <button class="btn btn-outline btn-sm" id="btn-save-transform">Save to vault</button>
+    </div>
+
+    <!-- ML scores -->
+    <div id="transform-scores" class="hidden" style="margin-top:8px;">
+      <div class="meter-row">
+        <span>Strength</span>
+        <div class="meter"><div class="meter-fill" id="tm-str"></div></div>
+        <span id="tm-str-lbl"></span>
+      </div>
+      <div class="meter-row">
+        <span>Memorability</span>
+        <div class="meter"><div class="meter-fill" id="tm-mem"></div></div>
+        <span id="tm-mem-lbl"></span>
+      </div>
+    </div>
+
+    <!-- Pipeline -->
+    <div class="pipeline hidden" id="transform-pipeline"></div>
+
+    <!-- Alternatives -->
+    <div class="candidates hidden" id="transform-candidates"></div>
+  </div>
+</div>
+
+<!-- ══ PANEL: GENERATE ══ -->
+<div class="panel hidden" id="tab-generate">
+
+  <label>Mode</label>
+  <div class="row" style="gap:5px;margin-bottom:8px;">
+    <button class="btn btn-primary btn-sm" data-mode="passphrase" id="mode-passphrase">Passphrase</button>
+    <button class="btn btn-outline btn-sm" data-mode="pattern"    id="mode-pattern">Pattern</button>
+    <button class="btn btn-outline btn-sm" data-mode="random"     id="mode-random">Random</button>
+  </div>
+
+  <div id="opts-passphrase">
+    <label>Words</label>
+    <input type="number" id="n-words" value="4" min="3" max="8"/>
+  </div>
+
+  <div id="opts-pattern" class="hidden">
+    <label>Pattern</label>
+    <input type="text" id="pattern-input" placeholder="e.g. Wwww-ddd-s"/>
+    <p class="hint">W=upper  w=lower  d=digit  s=special</p>
+  </div>
+
+  <div id="opts-random" class="hidden">
+    <label>Length</label>
+    <input type="number" id="rand-length" value="16" min="8" max="64"/>
+  </div>
+
+  <button class="btn btn-primary" id="btn-generate">Generate</button>
+
+  <div class="result-box hidden" id="gen-result">
+    <div class="result-label">Best password</div>
+    <div class="result-password" id="gen-password"></div>
+    <div class="result-actions">
+      <button class="btn btn-outline btn-sm" id="btn-copy-gen">Copy</button>
+      <button class="btn btn-outline btn-sm" id="btn-fill-gen">Fill on page</button>
+      <button class="btn btn-outline btn-sm" id="btn-save-gen">Save to vault</button>
+    </div>
+    <div class="meter-row" style="margin-top:8px;">
+      <span>Strength</span>
+      <div class="meter"><div class="meter-fill" id="gen-str"></div></div>
+      <span id="gen-str-lbl"></span>
+    </div>
+    <div class="meter-row">
+      <span>Memorability</span>
+      <div class="meter"><div class="meter-fill" id="gen-mem"></div></div>
+      <span id="gen-mem-lbl"></span>
+    </div>
+    <div class="candidates hidden" id="gen-candidates"></div>
+  </div>
+</div>
+
+<!-- ══ PANEL: VAULT ══ -->
+<div class="panel hidden" id="tab-vault">
+
+  <label>Save a password</label>
+  <input type="text"     id="vault-label"    placeholder="Label (e.g. gmail)"/>
+  <input type="password" id="vault-password" placeholder="Password to store"
+         style="margin-top:6px;"/>
+  <button class="btn btn-primary" id="btn-store">Store in Vault</button>
+
+  <div class="divider"></div>
+
+  <label>Retrieve a password</label>
+  <input type="text" id="retrieve-label" placeholder="Label to retrieve"/>
+  <button class="btn btn-outline" id="btn-retrieve">Retrieve</button>
+
+  <div class="result-box hidden" id="retrieve-result" style="margin-top:8px;">
+    <div class="result-label">Retrieved password</div>
+    <div class="result-password" id="retrieved-pwd"></div>
+    <div class="result-actions">
+      <button class="btn btn-outline btn-sm" id="btn-copy-retrieved">Copy</button>
+      <button class="btn btn-outline btn-sm" id="btn-fill-retrieved">Fill on page</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div class="toast" id="toast"></div>
+
+<script src="popup.js"></script>
+</body>
+</html>
