@@ -187,3 +187,102 @@ body { background: var(--bg); color: var(--text); font-family: system-ui, sans-s
   color: var(--muted);
   line-height: 1.5;
 }
+
+
+.stat-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .8rem;
+  text-align: center;
+}
+.stat-num {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.stat-lbl {
+  font-size: .72rem;
+  color: var(--muted);
+  margin-top: .3rem;
+}
+ 
+.practice-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  margin-bottom: .7rem;
+}
+.practice-label {
+  font-weight: 600;
+  font-size: .95rem;
+  margin-bottom: .25rem;
+}
+.practice-progress {
+  font-size: .78rem;
+  color: var(--muted);
+  margin-bottom: .7rem;
+}
+.practice-input-row {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+}
+.practice-input-row input {
+  flex: 1;
+  padding: .5rem .8rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: monospace;
+  font-size: .9rem;
+}
+.practice-result {
+  margin-top: .6rem;
+  padding: .5rem .8rem;
+  border-radius: 6px;
+  font-size: .82rem;
+  font-weight: 500;
+}
+.practice-result.pass {
+  background: rgba(46,204,113,.12);
+  color: #2ecc71;
+  border: 1px solid rgba(46,204,113,.3);
+}
+.practice-result.fail {
+  background: rgba(231,76,60,.10);
+  color: #e74c3c;
+  border: 1px solid rgba(231,76,60,.3);
+}
+ 
+.schedule-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: .5rem .8rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: .4rem;
+  font-size: .82rem;
+}
+.schedule-item .sched-label { font-weight: 600; }
+.schedule-item .sched-info  { color: var(--muted); font-size: .75rem; }
+.mastered-badge {
+  font-size: .68rem;
+  background: rgba(46,204,113,.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46,204,113,.3);
+  padding: .1rem .45rem;
+  border-radius: 20px;
+}
+.due-badge {
+  font-size: .68rem;
+  background: rgba(243,156,18,.15);
+  color: #f39c12;
+  border: 1px solid rgba(243,156,18,.3);
+  padding: .1rem .45rem;
+  border-radius: 20px;
+}

@@ -63,7 +63,19 @@ from preprocessing.feature_extraction import (
 )
 import secrets
 import string
-
+from security.spaced_repetition import (
+    get_due_today, get_stats, get_progress_label
+)
+from security.spaced_repetition import get_all_entries, get_progress_label
+from security.spaced_repetition import record_result, get_progress_label
+import hmac
+from security.spaced_repetition import (
+    get_entry, _save, _load, _days_from_now
+)
+from datetime import date, timedelta
+from security.spaced_repetition import (
+    add_to_schedule, remove_from_schedule,
+)
 # ── app factory ───────────────────────────────────────────────────────────────
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -550,6 +562,7 @@ def store():
     try:
         vm = _get_vault()
         vm.store(label, password)
+        add_to_schedule(label)
         vm.lock()
         return _json_ok({"label": label, "message": f"'{label}' stored."})
     except EntryAlreadyExistsError:
@@ -616,6 +629,7 @@ def delete():
     try:
         vm = _get_vault()
         vm.delete(label)
+        remove_from_schedule(label)
         vm.lock()
         return _json_ok({"label": label, "message": f"'{label}' deleted."})
     except EntryNotFoundError:
@@ -670,6 +684,198 @@ def from_sentence():
 @app.route("/logout-beacon", methods=["POST"])
 def logout_beacon():
     return "", 204   # do nothing — session timeout handles cleanup
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SPACED REPETITION ROUTES
+# Add these routes to app/app.py
+#
+# Also add this import near the top of app.py:
+#   from security.spaced_repetition import (
+#       add_to_schedule, remove_from_schedule,
+#       get_due_today, get_all_entries,
+#       get_stats, record_result, get_progress_label,
+#   )
+#
+# And modify the existing /store route to also call add_to_schedule(label)
+# And modify the existing /delete route to also call remove_from_schedule(label)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.route("/practice-due")
+@login_required
+def practice_due():
+    """
+    Returns passwords due for recall practice today.
+
+    Response:
+        {
+          success: true,
+          due:     [ { label, next_review, review_count, streak,
+                       mastered, last_result, progress_label } ],
+          stats:   { total, due, mastered, upcoming, streak }
+        }
+    """
+    try:
+       
+        due_entries = get_due_today()
+        stats       = get_stats()
+
+        due_list = []
+        for e in due_entries:
+            due_list.append({
+                "label":          e["label"],
+                "next_review":    e.get("next_review"),
+                "review_count":   e.get("review_count", 0),
+                "streak":         e.get("streak", 0),
+                "mastered":       e.get("mastered", False),
+                "last_result":    e.get("last_result"),
+                "progress_label": get_progress_label(e),
+            })
+
+        return _json_ok({ "due": due_list, "stats": stats })
+    except Exception as e:
+        return _json_error(str(e))
+
+
+@app.route("/practice-all")
+@login_required
+def practice_all():
+    """Returns ALL scheduled entries (for the full schedule view)."""
+    try:
+        
+        entries = get_all_entries()
+        result  = []
+        for e in entries:
+            result.append({
+                "label":          e["label"],
+                "next_review":    e.get("next_review"),
+                "review_count":   e.get("review_count", 0),
+                "streak":         e.get("streak", 0),
+                "mastered":       e.get("mastered", False),
+                "last_result":    e.get("last_result"),
+                "progress_label": get_progress_label(e),
+            })
+        return _json_ok({ "entries": result })
+    except Exception as e:
+        return _json_error(str(e))
+
+
+@app.route("/practice-check", methods=["POST"])
+@login_required
+def practice_check():
+    """
+    Verify a recall attempt for a given label.
+
+    The user types the password from memory. This route:
+      1. Retrieves the real password from the vault
+      2. Compares with the user's attempt (constant-time comparison)
+      3. Records the result in the review schedule
+      4. Returns whether it was correct + next review date
+
+    Request body:
+        { label: str, attempt: str }
+
+    Response:
+        {
+          success:      true,
+          correct:      bool,
+          label:        str,
+          next_review:  str | null,
+          review_count: int,
+          streak:       int,
+          mastered:     bool,
+          message:      str,
+          progress_label: str,
+        }
+    """
+    data    = request.get_json(silent=True) or request.form
+    label   = data.get("label",   "").strip()
+    attempt = data.get("attempt", "").strip()
+
+    if not label:
+        return _json_error("Label is required.")
+    if not attempt:
+        return _json_error("Please type the password to check.")
+
+    try:
+        
+        # Retrieve the real password from vault
+        vm       = _get_vault()
+        real_pwd = vm.retrieve(label)
+        vm.lock()
+
+        # Constant-time comparison to prevent timing attacks
+        correct = hmac.compare_digest(attempt, real_pwd)
+
+        # Record result in spaced repetition schedule
+        entry = record_result(label, success=correct)
+
+        if correct:
+            if entry.get("mastered"):
+                message = f"🎉 Perfect! '{label}' is now MASTERED — no more reviews needed!"
+            else:
+                days = (entry.get("next_review") or "")
+                message = (
+                    f"✅ Correct! Next review in "
+                    f"{_days_until(entry.get('next_review'))} day(s)."
+                )
+        else:
+            message = (
+                f"❌ Incorrect. The password was: {real_pwd}\n"
+                f"Review reset — practice again tomorrow."
+            )
+
+        return _json_ok({
+            "correct":        correct,
+            "label":          label,
+            "next_review":    entry.get("next_review"),
+            "review_count":   entry.get("review_count", 0),
+            "streak":         entry.get("streak", 0),
+            "mastered":       entry.get("mastered", False),
+            "message":        message,
+            "progress_label": get_progress_label(entry),
+            "real_password":  real_pwd if not correct else None,
+        })
+
+    except Exception as e:
+        return _json_error(str(e))
+
+
+@app.route("/practice-skip", methods=["POST"])
+@login_required
+def practice_skip():
+    """
+    Skip a review — push it to tomorrow without marking pass or fail.
+    Useful when the user knows the password but doesn't want to type it now.
+    """
+    data  = request.get_json(silent=True) or request.form
+    label = data.get("label", "").strip()
+    if not label:
+        return _json_error("Label is required.")
+
+    try:
+        
+        sched = _load()
+        if label in sched:
+            sched[label]["next_review"] = _days_from_now(1)
+            _save(sched)
+        return _json_ok({ "label": label, "message": "Skipped — review tomorrow." })
+    except Exception as e:
+        return _json_error(str(e))
+
+
+# ── helper ─────────────────────────────────────────────────────────────────────
+
+def _days_until(date_str):
+    """Return number of days until a date string (YYYY-MM-DD)."""
+    if not date_str:
+        return 0
+    
+    try:
+        delta = (date.fromisoformat(date_str) - date.today()).days
+        return max(0, delta)
+    except Exception:
+        return 0
 # ── run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
