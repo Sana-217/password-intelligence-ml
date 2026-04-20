@@ -187,10 +187,14 @@ def encrypt(plaintext: str, master_password: str) -> CryptoBundle:
     # AESGCM.encrypt() returns ciphertext + 16-byte authentication tag
     # concatenated together — you don't see the tag separately
     aesgcm     = AESGCM(key)
+    # Handle both str and bytes input
+    # CORRECT
+    if isinstance(plaintext, str):
+        plaintext = plaintext.encode('utf-8')
     ciphertext = aesgcm.encrypt(
         nonce,
-        plaintext.encode("utf-8"),
-        None,   # no associated data in our use case
+        plaintext,   # ← already bytes, no .encode()
+        None,
     )
 
     # Step 4: base64-encode everything for safe JSON storage

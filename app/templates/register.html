@@ -2,119 +2,117 @@
 {% block title %}Register — PassGuard{% endblock %}
 
 {% block content %}
-<div class="auth-card">
-  <h2>Create Your Vault</h2>
-  <p class="auth-sub">Choose a strong master password. It protects everything — and is never stored.</p>
+<div class="auth-container">
+  <div class="auth-card">
 
-  <form method="POST" action="{{ url_for('register') }}">
-  <div class="form-group">
-    <label for="username">Your name</label>
-    <input type="text" id="username" name="username"
-           placeholder="e.g. Sana" autocomplete="username" required>
+    <div class="auth-logo">
+      <span class="logo-text">PassGuard</span>
+      <span class="logo-badge">AI</span>
+    </div>
+
+    <h1 class="auth-title">Create your vault</h1>
+    <p class="auth-sub">
+      Each user gets their own private encrypted vault.
+      Choose a username and a strong master password.
+    </p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <!-- Existing users notice -->
+    {% if existing_users %}
+    <div style="background:var(--surface2);border:1px solid var(--border);
+                border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;
+                font-size:.82rem;color:var(--muted);">
+      Already registered:
+      {% for u in existing_users %}
+        <span style="color:var(--primary2);font-weight:600;">{{ u }}</span>{% if not loop.last %}, {% endif %}
+      {% endfor %}
+      — <a href="{{ url_for('login') }}" style="color:var(--primary2);">Log in instead</a>
+    </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('register') }}">
+
+      <div class="form-group">
+        <label for="username">Your name</label>
+        <input type="text" id="username" name="username"
+               placeholder="e.g. Sana"
+               required autocomplete="username">
+      </div>
+
+      <div class="form-group">
+        <label for="master_password">Master password</label>
+        <input type="password" id="master_password" name="master_password"
+               placeholder="Choose a strong master password"
+               required autocomplete="new-password"
+               oninput="checkStrength(this.value)">
+        <!-- Strength indicator -->
+        <div style="margin-top:.4rem;">
+          <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+            <div id="strength-bar" style="height:100%;width:0%;border-radius:2px;transition:all .3s;"></div>
+          </div>
+          <div id="strength-label"
+               style="font-size:.75rem;color:var(--muted);margin-top:.3rem;"></div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="confirm_password">Confirm master password</label>
+        <input type="password" id="confirm_password" name="confirm_password"
+               placeholder="Re-enter master password"
+               required autocomplete="new-password">
+      </div>
+
+      <div class="form-group">
+        <label for="hint">Password hint
+          <span style="font-size:.72rem;color:var(--muted);font-weight:400;">
+            (optional — stored as plain text)
+          </span>
+        </label>
+        <input type="text" id="hint" name="hint"
+               placeholder="e.g. My pet's name + birth year">
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%;margin-top:.5rem;">
+        Create Vault
+      </button>
+    </form>
+
+    <p style="text-align:center;margin-top:1.2rem;font-size:.85rem;color:var(--muted);">
+      Already have a vault?
+      <a href="{{ url_for('login') }}" style="color:var(--primary2);">Log in</a>
+    </p>
+
   </div>
-  <div class="form-group">
-    <label for="master_password">Master Password</label>
-    <input type="password" id="master_password" name="master_password"
-           placeholder="At least 8 characters" autocomplete="new-password" required>
-  </div>
-  <div class="form-group">
-  <label for="confirm_password">Confirm Password</label>
-  <input type="password" id="confirm_password" name="confirm_password"
-         placeholder="Repeat your master password"
-         autocomplete="new-password" required>
-  <span id="confirm-msg"
-        style="font-size:.78rem;margin-top:.3rem;display:block;min-height:1rem;">
-  </span>
-</div>
-  
-  <div class="form-group">
-  <label for="hint">Password hint <span style="color:var(--muted);font-size:.8rem;">(optional — shown on login if you forget)</span></label>
-  <input type="text" id="hint" name="hint"
-         placeholder="e.g. My dog's name + birth year + !"
-         autocomplete="off">
-  <small style="color:var(--muted);font-size:.75rem;margin-top:.3rem;display:block;">
-    Never write the actual password — just a personal reminder.
-  </small>
 </div>
 
-  <div class="strength-bar-wrap" id="strength-wrap" style="display:none">
-    <div class="strength-bar" id="strength-bar"></div>
-    <span class="strength-label" id="strength-label"></span>
-  </div>
-
-  <button type="submit" class="btn btn-primary btn-full">Create Vault</button>
-</form>
-  <p class="auth-footer">Already have a vault? <a href="{{ url_for('login') }}">Log in</a></p>
-</div>
-{% endblock %}
-
-{% block scripts %}
 <script>
-const masterInput  = document.getElementById("master_password");
-const confirmInput = document.getElementById("confirm_password");
-const submitBtn    = document.querySelector("button[type=submit]");
+function checkStrength(pwd) {
+  const bar   = document.getElementById("strength-bar");
+  const label = document.getElementById("strength-label");
+  let score = 0;
+  if (pwd.length >= 8)  score++;
+  if (pwd.length >= 12) score++;
+  if (/[A-Z]/.test(pwd)) score++;
+  if (/[0-9]/.test(pwd)) score++;
+  if (/[^A-Za-z0-9]/.test(pwd)) score++;
 
-// ── password strength bar  ─────────────────────────
-masterInput.addEventListener("input", async () => {
-  const pwd = masterInput.value;
-  const wrap = document.getElementById("strength-wrap");
-  const bar  = document.getElementById("strength-bar");
-  const lbl  = document.getElementById("strength-label");
-  if (!pwd) { wrap.style.display = "none"; return; }
-  wrap.style.display = "block";
-  const res = await postJSON("/analyze", { password: pwd });
-  if (!res.success) return;
-  const scores = { weak: 1, medium: 2, strong: 3 };
-  const colors = { weak: "#e74c3c", medium: "#f39c12", strong: "#2ecc71" };
-  const pct    = (scores[res.strength_label] / 3) * 100;
-  bar.style.width      = pct + "%";
-  bar.style.background = colors[res.strength_label];
-  lbl.textContent      = res.strength_label.toUpperCase();
-  lbl.style.color      = colors[res.strength_label];
-  checkMatch();
-});
-
-// ── live confirm password match check ──────────────────────────────
-function checkMatch() {
-  const master  = masterInput.value;
-  const confirm = confirmInput.value;
-
-  // Don't show anything if confirm is empty
-  if (!confirm) {
-    setConfirmState("neutral");
-    return;
-  }
-
-  if (master === confirm) {
-    setConfirmState("match");
-  } else {
-    setConfirmState("mismatch");
-  }
+  const levels = [
+    { pct: "20%",  color: "#e74c3c", text: "Very weak" },
+    { pct: "40%",  color: "#e74c3c", text: "Weak" },
+    { pct: "60%",  color: "#f39c12", text: "Moderate" },
+    { pct: "80%",  color: "#2ecc71", text: "Strong" },
+    { pct: "100%", color: "#2ecc71", text: "Very strong" },
+  ];
+  const lvl = levels[Math.min(score, 4)];
+  bar.style.width      = lvl.pct;
+  bar.style.background = lvl.color;
+  label.textContent    = pwd ? lvl.text : "";
+  label.style.color    = lvl.color;
 }
-
-function setConfirmState(state) {
-  const input = confirmInput;
-  const msg   = document.getElementById("confirm-msg");
-
-  // Reset styles
-  input.style.borderColor = "";
-  msg.textContent         = "";
-  msg.style.color         = "";
-  submitBtn.disabled      = false;
-
-  if (state === "match") {
-    input.style.borderColor = "#2ecc71";
-    msg.textContent         = "Passwords match";
-    msg.style.color         = "#2ecc71";
-  } else if (state === "mismatch") {
-    input.style.borderColor = "#e74c3c";
-    msg.textContent         = "Passwords do not match";
-    msg.style.color         = "#e74c3c";
-    submitBtn.disabled      = true;   // prevent submit while mismatched
-  }
-}
-
-confirmInput.addEventListener("input", checkMatch);
-masterInput.addEventListener("input",  checkMatch);
 </script>
 {% endblock %}

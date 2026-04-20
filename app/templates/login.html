@@ -2,74 +2,149 @@
 {% block title %}Login — PassGuard{% endblock %}
 
 {% block content %}
-<div class="auth-card">
-  <h2>Unlock Your Vault</h2>
-  <p class="auth-sub">Enter your master password to access your stored passwords.</p>
+<div class="auth-container">
+  <div class="auth-card">
 
-  <form method="POST" action="{{ url_for('login') }}">
-    <div class="form-group">
-      <label for="master_password">Master Password</label>
-      <input type="password" id="master_password" name="master_password"
-             placeholder="Your master password" autocomplete="current-password"
-             autofocus required>
+    <div class="auth-logo">
+      <span class="logo-text">PassGuard</span>
+      <span class="logo-badge">AI</span>
     </div>
 
-    <div id="hint-section" style="display:none;margin-bottom:1rem;">
-      <div style="background:var(--surface2);border:1px solid var(--border);
-                  border-radius:8px;padding:.8rem 1rem;font-size:.85rem;">
-        <span style="color:var(--muted);">Your hint: </span>
-        <span id="hint-text" style="color:var(--text);"></span>
+    <h1 class="auth-title">Welcome back</h1>
+    <p class="auth-sub">Enter your username and master password to unlock your vault.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('login') }}">
+
+      <!-- Username field + dropdown of registered users -->
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username"
+               placeholder="Enter your username"
+               list="users-list"
+               required autocomplete="username"
+               value="{{ prefill_username or '' }}">
+        <datalist id="users-list">
+          {% for user in registered_users %}
+            <option value="{{ user }}">
+          {% endfor %}
+        </datalist>
+        {% if registered_users %}
+        <div style="font-size:.75rem;color:var(--muted);margin-top:.3rem;">
+          Registered users: {{ registered_users | join(", ") }}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="master_password">Master password</label>
+        <input type="password" id="master_password" name="master_password"
+               placeholder="Enter your master password"
+               required autocomplete="current-password">
+      </div>
+
+      <!-- Hint display -->
+      <div id="hint-box" class="hidden"
+           style="background:var(--surface2);border:1px solid var(--border);
+                  border-radius:6px;padding:.6rem .9rem;margin-bottom:.8rem;
+                  font-size:.82rem;color:var(--muted);">
+        💡 Hint: <span id="hint-text"></span>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%;margin-top:.5rem;">
+        Unlock Vault
+      </button>
+    </form>
+
+    <div style="display:flex;justify-content:space-between;
+                margin-top:1.2rem;font-size:.82rem;">
+      <a href="{{ url_for('register') }}" style="color:var(--primary2);">
+        Create new vault
+      </a>
+      <button onclick="showResetConfirm()"
+              style="background:none;border:none;color:var(--muted);
+                     font-size:.82rem;cursor:pointer;padding:0;">
+        Reset vault
+      </button>
+    </div>
+
+    <!-- Reset confirmation -->
+    <div id="reset-confirm" class="hidden"
+         style="margin-top:1rem;padding:.8rem;background:rgba(231,76,60,.08);
+                border:1px solid rgba(231,76,60,.3);border-radius:8px;
+                font-size:.82rem;">
+      <div style="color:#e74c3c;font-weight:600;margin-bottom:.5rem;">
+        ⚠ Reset a user's vault?
+      </div>
+      <input type="text" id="reset-username" placeholder="Enter username to reset"
+             style="width:100%;padding:.4rem .7rem;margin-bottom:.5rem;
+                    background:var(--bg);border:1px solid var(--border);
+                    border-radius:5px;color:var(--text);font-size:.82rem;">
+      <div style="display:flex;gap:.5rem;">
+        <button onclick="resetVault()"
+                style="background:#e74c3c;color:#fff;border:none;
+                       padding:.4rem .9rem;border-radius:5px;
+                       cursor:pointer;font-size:.82rem;">
+          Confirm Reset
+        </button>
+        <button onclick="document.getElementById('reset-confirm').classList.add('hidden')"
+                style="background:var(--surface2);border:1px solid var(--border);
+                       padding:.4rem .9rem;border-radius:5px;cursor:pointer;
+                       font-size:.82rem;color:var(--text);">
+          Cancel
+        </button>
+      </div>
+      <div style="color:var(--muted);margin-top:.4rem;font-size:.75rem;">
+        This permanently deletes that user's vault. Cannot be undone.
       </div>
     </div>
 
-    <button type="submit" class="btn btn-primary btn-full">Unlock Vault</button>
-
-    <div style="text-align:center;margin-top:.8rem;">
-      <button type="button" class="btn btn-outline btn-sm" id="btn-show-hint">
-        Forgot password? Show hint
-      </button>
-    </div>
-  </form>
-
-  <div style="margin-top:1.5rem;padding-top:1.2rem;
-              border-top:1px solid var(--border);text-align:center;">
-    <p style="color:var(--muted);font-size:.8rem;margin-bottom:.7rem;">
-      Cannot remember your password at all?
-    </p>
-    <button class="btn btn-danger btn-sm" id="btn-reset-vault">
-      Reset Vault (deletes all stored passwords)
-    </button>
   </div>
-
-  <p class="auth-footer">No vault yet? <a href="{{ url_for('register') }}">Create one</a></p>
 </div>
-{% endblock %}
 
-{% block scripts %}
 <script>
-document.getElementById("btn-show-hint").addEventListener("click", async () => {
-  const res  = await fetch("/get-hint");
-  const data = await res.json();
-  if (data.hint) {
-    document.getElementById("hint-text").textContent = data.hint;
-    document.getElementById("hint-section").style.display = "block";
-    document.getElementById("btn-show-hint").textContent  = "Hint shown above";
-    document.getElementById("btn-show-hint").disabled     = true;
+// Load hint when username is entered
+document.getElementById("username").addEventListener("change", async function() {
+  const username = this.value.trim();
+  if (!username) return;
+  try {
+    const res = await fetch(`/get-hint?username=${encodeURIComponent(username)}`);
+    const data = await res.json();
+    if (data.hint) {
+      document.getElementById("hint-text").textContent = data.hint;
+      document.getElementById("hint-box").classList.remove("hidden");
+    } else {
+      document.getElementById("hint-box").classList.add("hidden");
+    }
+  } catch {}
+});
+
+function showResetConfirm() {
+  document.getElementById("reset-confirm").classList.remove("hidden");
+  // Pre-fill username if typed
+  const u = document.getElementById("username").value.trim();
+  if (u) document.getElementById("reset-username").value = u;
+}
+
+async function resetVault() {
+  const username = document.getElementById("reset-username").value.trim();
+  if (!username) { alert("Enter a username to reset."); return; }
+  if (!confirm(`Permanently delete vault for '${username}'?`)) return;
+  const res = await fetch("/reset-vault", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username }),
+  }).then(r => r.json());
+  if (res.success) {
+    location.reload();
   } else {
-    showToast("No hint was set during registration.", "error");
+    alert("Reset failed: " + (res.error || "Unknown error"));
   }
-});
-
-document.getElementById("btn-reset-vault").addEventListener("click", async () => {
-  if (!confirm("This will permanently delete your vault and ALL stored passwords.\n\nThis cannot be undone. Are you sure?")) return;
-  if (!confirm("Are you absolutely sure? All passwords will be lost forever.")) return;
-
-  const res  = await fetch("/reset-vault", { method: "POST" });
-  const data = await res.json();
-  if (data.success) {
-    showToast("Vault reset. You can now register again.", "success");
-    setTimeout(() => window.location.href = "/register", 1500);
-  }
-});
+}
 </script>
 {% endblock %}

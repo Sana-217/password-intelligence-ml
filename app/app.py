@@ -46,13 +46,18 @@ import os
 from datetime import timedelta
 from generator.password_gen  import generate_best, score_password
 from generator.memory_aid    import generate_memory_aids, sentence_to_password
-from security.storage        import (
+from security.storage import (
     VaultManager,
     initialise_vault,
     vault_exists,
+    list_users,
+    get_user_hint,
+    user_exists,
+    delete_user_vault,
     WrongMasterPasswordError,
     EntryNotFoundError,
     EntryAlreadyExistsError,
+    UserAlreadyExistsError,
     VaultError,
 )
 from preprocessing.feature_extraction import (
@@ -112,8 +117,10 @@ def login_required(f):
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _get_vault() -> VaultManager:
-    """Returns an unlocked VaultManager using the session master password."""
-    vm = VaultManager()
+    """Returns an unlocked VaultManager for the current session user."""
+    print("DEBUG username:", session.get("username"))
+    print("DEBUG master:", session.get("master"))
+    vm = VaultManager(username=session.get("username", "default"))
     vm.unlock(session["master"])
     return vm
 
@@ -138,10 +145,8 @@ def index():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "GET":
-        if vault_exists():
-            flash("A vault already exists. Please log in.", "info")
-            return redirect(url_for("login"))
-        return render_template("register.html")
+        existing = list_users()
+        return render_template("register.html", existing_users=existing)
 
     username = request.form.get("username", "").strip()
     master   = request.form.get("master_password", "").strip()
@@ -161,11 +166,9 @@ def register():
         return render_template("register.html")
 
     try:
-        initialise_vault(master)
 
         hint      = request.form.get("hint", "").strip()
-        name_file = ROOT / "vault_meta.json"
-        name_file.write_text(json.dumps({"username": username, "hint": hint}))
+        initialise_vault(master, username=username, hint=hint)
 
         session["logged_in"] = True
         session["master"]    = master
@@ -173,46 +176,45 @@ def register():
         flash(f"Welcome, {username}! Your vault has been created.", "success")
         return redirect(url_for("dashboard"))
 
+    except UserAlreadyExistsError as e:
+        flash(str(e), "danger")
+        return render_template("register.html", existing_users=list_users())
     except VaultError as e:
         flash(str(e), "danger")
-        return render_template("register.html")
-
+        return render_template("register.html", existing_users=list_users())
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
-        if not vault_exists():
-            flash("No vault found. Please register first.", "info")
-            return redirect(url_for("register"))
-        return render_template("login.html")
-
+        registered = list_users()
+        return render_template("login.html", registered_users=registered,prefill_username="")
+    username = request.form.get("username", "").strip()
     master = request.form.get("master_password", "").strip()
+    registered = list_users()
+    if not username:
+        flash("Please enter your master password.", "danger")
+        return render_template("login.html",  registered_users=registered)
     if not master:
         flash("Please enter your master password.", "danger")
-        return render_template("login.html")
-
+        return render_template("login.html", registered_users=registered,prefill_username=username)
+    if not vault_exists(username):
+        flash(f"No vault found for '{username}'. Please register first.", "danger")
+        return render_template("login.html", registered_users=registered,prefill_username=username)
+    
     try:
-        vm = VaultManager()
+        vm = VaultManager(username=username)
         vm.unlock(master)
         vm.lock()
         session["logged_in"] = True
         session["master"]    = master
-
-        # Load username if saved
-        name_file = ROOT / "vault_meta.json"
-        if name_file.exists():
-            meta = json.loads(name_file.read_text())
-            session["username"] = meta.get("username", "User")
-        else:
-            session["username"] = "User"
-
+        session["username"]  = username
         return redirect(url_for("dashboard"))
     except WrongMasterPasswordError:
         flash("Incorrect master password.", "danger")
-        return render_template("login.html")
+        return render_template("login.html",registered_users=registered,prefill_username=username)
     except Exception as e:
         flash(f"Error: {e}", "danger")
-        return render_template("login.html")
+        return render_template("login.html",registered_users=registered,prefill_username=username)
 
 
 @app.route("/logout")
@@ -224,26 +226,31 @@ def logout():
 
 @app.route("/get-hint")
 def get_hint():
-    name_file = ROOT / "vault_meta.json"
-    if name_file.exists():
-        meta = json.loads(name_file.read_text())
-        return jsonify({"hint": meta.get("hint", "")})
-    return jsonify({"hint": ""})
-
+    username = request.args.get("username", "").strip()
+    if not username:
+        return jsonify({"hint": ""})
+    hint = get_user_hint(username)
+    return jsonify({"hint": hint})
 
 @app.route("/reset-vault", methods=["POST"])
 def reset_vault():
-    vault_file = ROOT / "vault.json"
-    meta_file  = ROOT / "vault_meta.json"
+    data     = request.get_json(silent=True) or request.form
+    username = data.get("username", "").strip()
     try:
-        if vault_file.exists():
-            os.remove(vault_file)
-        if meta_file.exists():
-            os.remove(meta_file)
-        session.clear()
+        if username:
+            # Reset specific user
+            delete_user_vault(username)
+            if session.get("username", "").lower() == username.lower():
+                session.clear()
+        else:
+            # Reset current user (fallback)
+            current = session.get("username", "")
+            if current:
+                delete_user_vault(current)
+            session.clear()
         return jsonify({"success": True})
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+        return jsonify({"success": False, "error": str(e)}) 
 # ── routes: dashboard ─────────────────────────────────────────────────────────
 
 @app.route("/dashboard")
@@ -549,7 +556,6 @@ def _build_enhanced(password: str) -> str:
 @app.route("/store", methods=["POST"])
 @login_required
 def store():
-    """Stores a password in the vault under a label."""
     data     = request.get_json(silent=True) or request.form
     label    = data.get("label", "").strip()
     password = data.get("password", "").strip()
@@ -562,7 +568,6 @@ def store():
     try:
         vm = _get_vault()
         vm.store(label, password)
-        add_to_schedule(label)
         vm.lock()
         return _json_ok({"label": label, "message": f"'{label}' stored."})
     except EntryAlreadyExistsError:

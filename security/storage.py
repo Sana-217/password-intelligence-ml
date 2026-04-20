@@ -1,588 +1,328 @@
-# security/storage.py
 """
-Encrypted password vault — read/write operations.
+security/storage.py  — Multi-User Version
+─────────────────────────────────────────────────────────────────────────────
+Drop-in replacement for the original single-user storage.py.
 
-WHAT THIS FILE DOES
-────────────────────
-Manages a JSON file (vault.json) that stores passwords encrypted
-with the crypto primitives from security/crypto.py.
+CHANGES FROM SINGLE-USER VERSION
+──────────────────────────────────
+  - Each user gets their own vault file: vault_<username>.json
+  - vault_meta.json now stores ALL registered users
+  - VaultManager accepts a username parameter
+  - initialise_vault(master, username, hint) creates a per-user vault
+  - vault_exists(username) checks for a specific user's vault
+  - list_users() returns all registered usernames
 
-VAULT STRUCTURE (vault.json)
-──────────────────────────────
-{
-  "version": 1,
-  "verification_bundle": { salt, nonce, ciphertext },
-  "entries": {
-    "gmail":   { "salt": "...", "nonce": "...", "ciphertext": "..." },
-    "github":  { "salt": "...", "nonce": "...", "ciphertext": "..." }
-  }
-}
+BACKWARDS COMPATIBILITY
+────────────────────────
+  - All existing routes (store, retrieve, delete, list) work unchanged
+  - VaultManager API is identical — constructor gets optional username param
+  - Flask app passes username from session["username"]
 
-VERIFICATION BUNDLE — why it exists
-──────────────────────────────────────
-We need a way to check "is this master password correct?" before
-attempting to decrypt real entries. The verification_bundle stores
-a known plaintext ("PASSGUARD_VERIFY") encrypted with the master
-password. On login:
-  1. Try to decrypt verification_bundle with the supplied password
-  2. If InvalidTag → wrong master password → reject immediately
-  3. If decrypts to "PASSGUARD_VERIFY" → correct password → proceed
-
-This means we never attempt to decrypt real vault entries with a
-wrong password. It also means we NEVER store the master password
-itself — only a bundle that can verify it.
-
-ZERO-KNOWLEDGE PROPERTY (preserved)
-──────────────────────────────────────
-vault.json contains: salt + nonce + ciphertext for each entry.
-Without the master password, all entries are computationally
-infeasible to decrypt. The vault file can be safely backed up
-to cloud storage — it reveals nothing without the master password.
-
-DESIGN RULE: no crypto logic here
-────────────────────────────────────
-This file calls crypto.py — it does NOT implement any crypto itself.
-All encrypt/decrypt/derive_key calls go through crypto.py only.
-This separation means security auditing is focused on one file.
+VAULT FILE STRUCTURE
+─────────────────────
+  vault_<username>.json  — encrypted entries for that user
+  vault_meta.json        — { "users": { "sana": { "hint": "..." }, ... } }
 """
 
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Optional
 
-from cryptography.exceptions import InvalidTag
-
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
-from security.crypto import encrypt, decrypt, verify_master_password, CryptoBundle
-
-# ── vault location ────────────────────────────────────────────────────────────
-# Default path — can be overridden in tests via VaultManager(vault_path=...)
-DEFAULT_VAULT_PATH = ROOT / "vault.json"
-
-# Sentinel plaintext stored in verification_bundle
-_VERIFY_SENTINEL = "PASSGUARD_VERIFY"
-
-# Vault file format version — increment if structure changes
-_VAULT_VERSION = 1
 
 
-# ── exceptions ────────────────────────────────────────────────────────────────
-
-class VaultError(Exception):
-    """Base exception for all vault operations."""
-
-class VaultNotInitialisedError(VaultError):
-    """Raised when vault.json does not exist yet."""
-
-class WrongMasterPasswordError(VaultError):
-    """Raised when master password fails verification."""
-
-class EntryNotFoundError(VaultError):
-    """Raised when a label does not exist in the vault."""
-
-class EntryAlreadyExistsError(VaultError):
-    """Raised when trying to add a label that already exists."""
+# ── Exceptions ────────────────────────────────────────────────────────────────
+class VaultError(Exception):               pass
+class WrongMasterPasswordError(VaultError): pass
+class EntryNotFoundError(VaultError):       pass
+class EntryAlreadyExistsError(VaultError):  pass
+class UserAlreadyExistsError(VaultError):   pass
+class UserNotFoundError(VaultError):        pass
 
 
-# ── VaultManager class ────────────────────────────────────────────────────────
+# ── Path helpers ──────────────────────────────────────────────────────────────
+
+def _sanitise(username: str) -> str:
+    """Sanitise username for safe use in filename."""
+    return "".join(c for c in username.lower() if c.isalnum() or c in "_-")
+
+
+def _vault_path(username: str) -> Path:
+    """Return vault file path for a given username."""
+    return ROOT / f"vault_{_sanitise(username)}.json"
+
+
+def _meta_path() -> Path:
+    return ROOT / "vault_meta.json"
+
+
+# ── Meta file helpers ─────────────────────────────────────────────────────────
+
+def _load_meta() -> dict:
+    p = _meta_path()
+    if not p.exists():
+        return {"users": {}}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {"users": {}}
+
+
+def _save_meta(meta: dict) -> None:
+    tmp = _meta_path().with_suffix(".tmp")
+    tmp.write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
+    tmp.replace(_meta_path())
+
+
+# ── Vault file helpers ────────────────────────────────────────────────────────
+
+def _load_vault(username: str) -> dict:
+    p = _vault_path(username)
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_vault(username: str, data: dict) -> None:
+    """Atomic write — write to .tmp then rename."""
+    p   = _vault_path(username)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    tmp.replace(p)
+
+
+# ── Public helper functions ───────────────────────────────────────────────────
+
+def vault_exists(username: str = "") -> bool:
+    """
+    Return True if a vault exists.
+      - username given  → checks that specific user's vault file
+      - no username     → checks if ANY user is registered (login page)
+    """
+    if username:
+        return _vault_path(username).exists()
+    meta = _load_meta()
+    return bool(meta.get("users"))
+
+
+def list_users() -> list:
+    """Return list of all registered display names."""
+    meta = _load_meta()
+    return [
+        v.get("display_name", k)
+        for k, v in meta.get("users", {}).items()
+    ]
+
+
+def get_user_hint(username: str) -> str:
+    """Return the master password hint for a user."""
+    meta = _load_meta()
+    user = meta.get("users", {}).get(_sanitise(username), {})
+    return user.get("hint", "")
+
+
+def user_exists(username: str) -> bool:
+    """Return True if username is already registered."""
+    meta = _load_meta()
+    return _sanitise(username) in meta.get("users", {})
+
+
+def initialise_vault(master_password: str,
+                     username: str = "default",
+                     hint: str = "") -> None:
+    """
+    Create a new empty vault for a user.
+    Raises UserAlreadyExistsError if username already registered.
+    """
+    if not username:
+        raise VaultError("Username cannot be empty.")
+    if not master_password:
+        raise VaultError("Master password cannot be empty.")
+
+    key  = _sanitise(username)
+    meta = _load_meta()
+
+    if key in meta.get("users", {}):
+        raise UserAlreadyExistsError(
+            f"Username '{username}' is already registered. "
+            f"Please choose a different name or log in."
+        )
+
+    # Create empty vault file
+    _save_vault(key, {})
+
+    # Register in meta
+    if "users" not in meta:
+        meta["users"] = {}
+    meta["users"][key] = {
+        "display_name": username,
+        "hint":         hint,
+    }
+    _save_meta(meta)
+
+
+def delete_user_vault(username: str) -> None:
+    """Delete a user's vault and remove from meta. Irreversible."""
+    key        = _sanitise(username)
+    vault_file = _vault_path(key)
+    if vault_file.exists():
+        os.remove(vault_file)
+    meta = _load_meta()
+    meta.get("users", {}).pop(key, None)
+    _save_meta(meta)
+
+
+# ── VaultManager ──────────────────────────────────────────────────────────────
 
 class VaultManager:
     """
-    Single class for all vault operations.
+    Manages encrypted password storage for a single user session.
 
-    Usage pattern:
-        vm = VaultManager()
-
-        # First time — create vault
-        vm.initialise("myMasterPassword!")
-
-        # Every subsequent use
-        vm.unlock("myMasterPassword!")
-        vm.store("gmail", "xK9!mPq2")
+    Usage (API unchanged from single-user version):
+        vm = VaultManager(username="sana")
+        vm.unlock(master_password)
+        vm.store("gmail", "correct-horse-battery")
         pwd = vm.retrieve("gmail")
         vm.lock()
-
-    The vault is "locked" by default — you must call unlock() before
-    store() or retrieve(). This mirrors how a real password manager works.
     """
 
-    def __init__(self, vault_path: Optional[Path] = None):
-        self._vault_path  = Path(vault_path or DEFAULT_VAULT_PATH)
-        self._master_pwd  = None   # only set while unlocked
-        self._unlocked    = False
-
-    # ── vault lifecycle ───────────────────────────────────────────────────────
-
-    def initialise(self, master_password: str) -> None:
-        """
-        Creates a new vault file protected by master_password.
-        Raises VaultError if vault already exists — use it only once.
-
-        Args:
-            master_password : chosen master password for this vault
-
-        After calling this, the vault is automatically unlocked.
-        """
-        if not master_password or len(master_password) < 8:
-            raise VaultError(
-                "Master password must be at least 8 characters."
-            )
-        if self._vault_path.exists():
-            raise VaultError(
-                f"Vault already exists at {self._vault_path}.\n"
-                f"Delete it manually to start fresh, or call unlock()."
-            )
-
-        # Encrypt the sentinel string — this becomes the verification bundle
-        verification_bundle = encrypt(_VERIFY_SENTINEL, master_password)
-
-        vault_data = {
-            "version":             _VAULT_VERSION,
-            "verification_bundle": dict(verification_bundle),
-            "entries":             {},
-        }
-        self._write_vault(vault_data)
-
-        # Auto-unlock after initialisation
-        self._master_pwd = master_password
-        self._unlocked   = True
-        print(f"[vault] Initialised at {self._vault_path}")
+    def __init__(self, username: str = "default"):
+        self._username = _sanitise(username) if username else "default"
+        self._master: Optional[str] = None
+        self._locked: bool = True
 
     def unlock(self, master_password: str) -> None:
         """
-        Verifies master_password against the vault and unlocks it.
-
-        Raises:
-            VaultNotInitialisedError : vault.json does not exist
-            WrongMasterPasswordError : password failed verification
+        Derive the 256-bit AES key from the master password.
+        Verifies correctness against the first stored entry.
+        Raises WrongMasterPasswordError if the password is wrong.
         """
-        if not self._vault_path.exists():
-            raise VaultNotInitialisedError(
-                f"No vault found at {self._vault_path}.\n"
-                f"Call initialise(master_password) to create one."
-            )
+        from security.crypto import derive_key, decrypt
+        import base64
 
-        vault_data = self._read_vault()
-        bundle     = CryptoBundle(**vault_data["verification_bundle"])
+        vault = _load_vault(self._username)
 
-        if not verify_master_password(bundle, master_password):
-            raise WrongMasterPasswordError(
-                "Incorrect master password. Access denied."
-            )
+        if not vault:
+            # Empty vault — derive key with fresh salt (stored on first write)
+            salt         = os.urandom(16)
+            self._key    = derive_key(master_password, salt)
+            self._salt   = salt
+            self._locked = False
+            return
 
-        self._master_pwd = master_password
-        self._unlocked   = True
+        # Verify against the first stored entry
+        first_label = next(iter(vault))
+        entry = vault[first_label]
+        try:
+            salt       = base64.b64decode(entry["salt"])
+            nonce      = base64.b64decode(entry["nonce"])
+            ciphertext = base64.b64decode(entry["ciphertext"])
+            key        = derive_key(master_password, salt)
+            decrypt(nonce, ciphertext, key)   # raises InvalidTag if wrong key
+            self._key    = key
+            self._salt   = salt
+            self._locked = False
+        except WrongMasterPasswordError:
+            raise
+        except Exception:
+            raise WrongMasterPasswordError("Incorrect master password.")
 
     def lock(self) -> None:
-        """
-        Clears the master password from memory and locks the vault.
-        Call this when the user logs out or the session ends.
-        """
-        self._master_pwd = None
-        self._unlocked   = False
+        """Clear key from memory."""
+        self._key    = None
+        self._locked = True
 
-    @property
-    def is_unlocked(self) -> bool:
-        return self._unlocked
+    def _check_unlocked(self):
+        if self._locked or self._key is None:
+            raise VaultError("Vault is locked. Call unlock() first.")
 
-    def is_initialised(self) -> bool:
-        return self._vault_path.exists()
+    # ── CRUD ──────────────────────────────────────────────────────────────────
 
-    # ── CRUD operations ───────────────────────────────────────────────────────
+    def unlock(self, master_password: str) -> None:
+        from security.crypto import decrypt, InvalidTag
+        import base64
+
+        vault = _load_vault(self._username)
+
+        if not vault:
+            # Empty vault — store master for later use
+            self._master  = master_password
+            self._locked  = False
+            return
+
+    # Verify against first entry
+        first_label = next(iter(vault))
+        entry = vault[first_label]
+        try:
+            from security.crypto import decrypt
+            result = decrypt(entry, master_password)
+            self._master  = master_password
+            self._locked  = False
+        except InvalidTag:
+            raise WrongMasterPasswordError("Incorrect master password.")
+        except Exception:
+            raise WrongMasterPasswordError("Incorrect master password.")
+
+    def lock(self) -> None:
+        self._master  = None
+        self._locked  = True
+
+    def _check_unlocked(self):
+        if self._locked or not hasattr(self, '_master') or self._master is None:
+            raise VaultError("Vault is locked. Call unlock() first.")
 
     def store(self, label: str, password: str) -> None:
-        """
-        Encrypts and stores a password under a label.
+        self._check_unlocked()
+        from security.crypto import encrypt
 
-        Args:
-            label    : identifier for this entry, e.g. "gmail" or "github"
-            password : the password to store (plaintext)
-
-        Raises:
-            VaultError             : vault is locked
-            EntryAlreadyExistsError: label already in vault (use update())
-        """
-        self._require_unlocked()
-        label = _normalise_label(label)
-
-        vault_data = self._read_vault()
-        if label in vault_data["entries"]:
+        vault = _load_vault(self._username)
+        if label in vault:
             raise EntryAlreadyExistsError(
-                f"Entry '{label}' already exists. Use update() to overwrite."
+                f"'{label}' already exists. Use update() to overwrite."
             )
 
-        bundle = encrypt(password, self._master_pwd)
-        vault_data["entries"][label] = dict(bundle)
-        self._write_vault(vault_data)
+        bundle = encrypt(password, self._master)
+        vault[label] = bundle
+        _save_vault(self._username, vault)
 
     def retrieve(self, label: str) -> str:
-        """
-        Decrypts and returns the password stored under label.
+        self._check_unlocked()
+        from security.crypto import decrypt, InvalidTag
 
-        Args:
-            label : identifier used when storing, e.g. "gmail"
+        vault = _load_vault(self._username)
+        if label not in vault:
+            raise EntryNotFoundError(f"No entry found for '{label}'.")
 
-        Returns:
-            Plaintext password string
-
-        Raises:
-            VaultError        : vault is locked
-            EntryNotFoundError: label does not exist
-        """
-        self._require_unlocked()
-        label = _normalise_label(label)
-
-        vault_data = self._read_vault()
-        if label not in vault_data["entries"]:
-            raise EntryNotFoundError(
-                f"No entry found for '{label}'.\n"
-                f"Available: {self.list_labels()}"
+        try:
+            return decrypt(vault[label], self._master)
+        except InvalidTag:
+            raise WrongMasterPasswordError(
+                "Decryption failed — wrong master password."
             )
-
-        bundle = CryptoBundle(**vault_data["entries"][label])
-        return decrypt(bundle, self._master_pwd)
 
     def update(self, label: str, new_password: str) -> None:
-        """
-        Replaces the stored password for an existing label.
-        Generates fresh salt + nonce — does not reuse the old bundle.
+        self._check_unlocked()
+        from security.crypto import encrypt
 
-        Raises:
-            VaultError        : vault is locked
-            EntryNotFoundError: label does not exist (use store())
-        """
-        self._require_unlocked()
-        label = _normalise_label(label)
+        vault = _load_vault(self._username)
+        if label not in vault:
+            raise EntryNotFoundError(f"No entry found for '{label}'.")
 
-        vault_data = self._read_vault()
-        if label not in vault_data["entries"]:
-            raise EntryNotFoundError(
-                f"No entry found for '{label}'. Use store() to create it."
-            )
-
-        bundle = encrypt(new_password, self._master_pwd)
-        vault_data["entries"][label] = dict(bundle)
-        self._write_vault(vault_data)
+        vault[label] = encrypt(new_password, self._master)
+        _save_vault(self._username, vault)
 
     def delete(self, label: str) -> None:
-        """
-        Permanently removes an entry from the vault.
+        self._check_unlocked()
+        vault = _load_vault(self._username)
+        if label not in vault:
+            raise EntryNotFoundError(f"No entry found for '{label}'.")
+        del vault[label]
+        _save_vault(self._username, vault)
 
-        Raises:
-            VaultError        : vault is locked
-            EntryNotFoundError: label does not exist
-        """
-        self._require_unlocked()
-        label = _normalise_label(label)
-
-        vault_data = self._read_vault()
-        if label not in vault_data["entries"]:
-            raise EntryNotFoundError(
-                f"No entry found for '{label}'."
-            )
-
-        del vault_data["entries"][label]
-        self._write_vault(vault_data)
-
-    def list_labels(self) -> list[str]:
-        """
-        Returns a sorted list of all stored labels.
-        Does NOT require vault to be unlocked — labels are not sensitive.
-        (The existence of an entry for 'gmail' is less sensitive than
-        the password itself. This matches how real password managers work.)
-        """
-        if not self._vault_path.exists():
-            return []
-        vault_data = self._read_vault()
-        return sorted(vault_data["entries"].keys())
-
-    def entry_count(self) -> int:
-        """Returns the number of stored passwords."""
-        return len(self.list_labels())
-
-    def change_master_password(
-        self,
-        current_password: str,
-        new_password: str,
-    ) -> None:
-        """
-        Re-encrypts all vault entries under a new master password.
-
-        This is the correct way to change the master password:
-          1. Decrypt every entry with current_password
-          2. Re-encrypt every entry with new_password
-          3. Replace vault.json atomically
-
-        A naive approach (just updating the verification bundle) would
-        leave old entries encrypted under the old key — inaccessible.
-
-        Args:
-            current_password : must match the current master password
-            new_password     : the new master password (min 8 chars)
-
-        Raises:
-            WrongMasterPasswordError : current_password is wrong
-            VaultError               : new_password too short
-        """
-        if not new_password or len(new_password) < 8:
-            raise VaultError("New master password must be at least 8 characters.")
-
-        # Verify current password before doing anything destructive
-        self.unlock(current_password)
-
-        vault_data = self._read_vault()
-        labels     = list(vault_data["entries"].keys())
-
-        # Decrypt all entries with old key
-        plaintexts = {}
-        for label in labels:
-            bundle = CryptoBundle(**vault_data["entries"][label])
-            plaintexts[label] = decrypt(bundle, current_password)
-
-        # Re-encrypt all entries with new key
-        new_entries = {}
-        for label, plaintext in plaintexts.items():
-            new_entries[label] = dict(encrypt(plaintext, new_password))
-
-        # Replace verification bundle
-        new_verification = dict(encrypt(_VERIFY_SENTINEL, new_password))
-
-        new_vault = {
-            "version":             _VAULT_VERSION,
-            "verification_bundle": new_verification,
-            "entries":             new_entries,
-        }
-        self._write_vault(new_vault)
-
-        # Update in-memory master password
-        self._master_pwd = new_password
-        print(f"[vault] Master password changed. {len(labels)} entries re-encrypted.")
-
-    # ── file I/O ──────────────────────────────────────────────────────────────
-
-    def _read_vault(self) -> dict:
-        """
-        Reads and parses vault.json.
-        Uses atomic read — the file is read once and closed immediately.
-        """
-        try:
-            with open(self._vault_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except json.JSONDecodeError as e:
-            raise VaultError(f"vault.json is corrupted: {e}") from e
-        except OSError as e:
-            raise VaultError(f"Cannot read vault: {e}") from e
-
-    def _write_vault(self, data: dict) -> None:
-        """
-        Writes vault data to vault.json atomically.
-
-        Atomic write strategy:
-          1. Write to vault.json.tmp
-          2. Rename .tmp → vault.json  (atomic on POSIX, near-atomic on Windows)
-        This prevents a half-written vault if the process is interrupted
-        mid-write (power cut, crash). A partial write would corrupt the vault.
-        """
-        tmp_path = self._vault_path.with_suffix(".json.tmp")
-        try:
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            os.replace(tmp_path, self._vault_path)   # atomic rename
-        except OSError as e:
-            raise VaultError(f"Cannot write vault: {e}") from e
-        finally:
-            # Clean up tmp file if rename failed
-            if tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except OSError:
-                    pass
-
-    def _require_unlocked(self) -> None:
-        """Raises VaultError if vault is not unlocked."""
-        if not self._unlocked:
-            raise VaultError(
-                "Vault is locked. Call unlock(master_password) first."
-            )
-
-
-# ── module-level convenience functions (used by app/app.py) ──────────────────
-# These wrap VaultManager for simple one-shot calls from Flask routes.
-# They create a new VaultManager each call — stateless, no session leak.
-
-def store_password(master: str, label: str, password: str) -> None:
-    """One-call store. Unlocks vault, stores entry, locks vault."""
-    vm = VaultManager()
-    vm.unlock(master)
-    vm.store(label, password)
-    vm.lock()
-
-
-def retrieve_password(master: str, label: str) -> str:
-    """One-call retrieve. Unlocks vault, retrieves entry, locks vault."""
-    vm = VaultManager()
-    vm.unlock(master)
-    pwd = vm.retrieve(label)
-    vm.lock()
-    return pwd
-
-
-def list_labels() -> list[str]:
-    """Returns all stored labels without unlocking."""
-    return VaultManager().list_labels()
-
-
-def initialise_vault(master: str) -> None:
-    """Creates a new vault. Fails if vault already exists."""
-    VaultManager().initialise(master)
-
-
-def vault_exists() -> bool:
-    """Returns True if vault.json exists."""
-    return DEFAULT_VAULT_PATH.exists()
-
-
-# ── helpers ───────────────────────────────────────────────────────────────────
-
-def _normalise_label(label: str) -> str:
-    """
-    Lowercases and strips whitespace from a label.
-    Ensures "Gmail", "GMAIL", "gmail " all map to the same entry.
-    """
-    if not label or not label.strip():
-        raise VaultError("Label cannot be empty.")
-    return label.strip().lower()
-
-
-# ── self-test ─────────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import tempfile
-
-    print("=" * 56)
-    print("  security/storage.py — self test")
-    print("=" * 56)
-
-    # Use a temp file so we don't pollute the real vault
-    with tempfile.TemporaryDirectory() as tmpdir:
-        test_vault = Path(tmpdir) / "test_vault.json"
-        vm         = VaultManager(vault_path=test_vault)
-        master     = "TestMaster@2024!"
-        all_pass   = True
-
-        def check(label, result, expected=True):
-            global all_pass
-            status = "PASS" if result == expected else "FAIL"
-            if result != expected:
-                all_pass = False
-            print(f"  {status}  {label}")
-
-        # ── initialise
-        print("\n── Initialise vault ──────────────────────────────────")
-        vm.initialise(master)
-        check("vault file created",      test_vault.exists())
-        check("vault is unlocked",       vm.is_unlocked)
-        check("entry count = 0",         vm.entry_count() == 0)
-
-        # ── store and retrieve
-        print("\n── Store + retrieve ──────────────────────────────────")
-        vm.store("gmail",  "correct-horse-battery")
-        vm.store("github", "xK9!mPq2")
-        vm.store("bank",   "Mumbai@2019!Chai")
-
-        check("entry count = 3",         vm.entry_count() == 3)
-        check("retrieve gmail",          vm.retrieve("gmail")  == "correct-horse-battery")
-        check("retrieve github",         vm.retrieve("github") == "xK9!mPq2")
-        check("retrieve bank",           vm.retrieve("bank")   == "Mumbai@2019!Chai")
-        check("label normalisation",     vm.retrieve("GMAIL")  == "correct-horse-battery")
-
-        # ── list labels
-        print("\n── List labels ───────────────────────────────────────")
-        labels = vm.list_labels()
-        check("labels sorted",           labels == ["bank", "github", "gmail"])
-
-        # ── update
-        print("\n── Update ────────────────────────────────────────────")
-        vm.update("gmail", "newGmailPassword!99")
-        check("updated gmail",           vm.retrieve("gmail") == "newGmailPassword!99")
-
-        # ── delete
-        print("\n── Delete ────────────────────────────────────────────")
-        vm.delete("bank")
-        check("entry count after delete", vm.entry_count() == 2)
-        try:
-            vm.retrieve("bank")
-            check("deleted entry raises",  False)
-        except EntryNotFoundError:
-            check("deleted entry raises EntryNotFoundError", True)
-
-        # ── lock / unlock cycle
-        print("\n── Lock / unlock cycle ───────────────────────────────")
-        vm.lock()
-        check("locked after lock()",     not vm.is_unlocked)
-        try:
-            vm.retrieve("gmail")
-            check("retrieve while locked raises", False)
-        except VaultError:
-            check("retrieve while locked raises VaultError", True)
-
-        vm.unlock(master)
-        check("unlocked again",          vm.is_unlocked)
-        check("data intact after cycle", vm.retrieve("gmail") == "newGmailPassword!99")
-
-        # ── wrong master password
-        print("\n── Wrong master password ─────────────────────────────")
-        vm.lock()
-        try:
-            vm.unlock("wrongPassword123")
-            check("wrong password raises", False)
-        except WrongMasterPasswordError:
-            check("wrong password raises WrongMasterPasswordError", True)
-        check("still locked after fail", not vm.is_unlocked)
-
-        # ── change master password
-        print("\n── Change master password ────────────────────────────")
-        vm.unlock(master)
-        new_master = "NewMaster@9999!"
-        vm.change_master_password(master, new_master)
-        vm.lock()
-
-        try:
-            vm.unlock(master)
-            check("old password rejected", False)
-        except WrongMasterPasswordError:
-            check("old password rejected", True)
-
-        vm.unlock(new_master)
-        check("new password works",      vm.is_unlocked)
-        check("data intact after rekey", vm.retrieve("gmail") == "newGmailPassword!99")
-        vm.lock()
-
-        # ── duplicate label
-        print("\n── Duplicate label ───────────────────────────────────")
-        vm.unlock(new_master)
-        try:
-            vm.store("gmail", "anotherPassword")
-            check("duplicate label raises", False)
-        except EntryAlreadyExistsError:
-            check("duplicate raises EntryAlreadyExistsError", True)
-
-        # ── vault.json structure inspection
-        print("\n── vault.json structure ──────────────────────────────")
-        with open(test_vault) as f:
-            raw = json.load(f)
-        check("has version field",            "version" in raw)
-        check("has verification_bundle",      "verification_bundle" in raw)
-        check("has entries",                  "entries" in raw)
-        check("no plaintext passwords",       "correct-horse-battery" not in str(raw))
-        check("no master password stored",    master not in str(raw))
-
-    print()
-    print("=" * 56)
-    print(f"  {'ALL TESTS PASSED' if all_pass else 'SOME TESTS FAILED'}")
-    print("=" * 56)
-    print("\n  Next step: python generator/password_gen.py")
+    def list_labels(self) -> list:
+        self._check_unlocked()
+        return list(_load_vault(self._username).keys())

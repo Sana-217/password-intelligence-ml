@@ -1,0 +1,27 @@
+{
+  "gmail": {
+    "salt": "rSmNokaewzzAI6e7Up4vrA==",
+    "nonce": "AmV3T8mGBciNt1Yp",
+    "ciphertext": "2RCESNXM3ei3NAmNXyqgDu+t5VYizT6FjQPqAD4AJuK3Pic="
+  },
+  "leet": {
+    "salt": "nKkJJakrTtcrCwqqCoAzVg==",
+    "nonce": "m2wdk3KDAZ/O1i9S",
+    "ciphertext": "mgbsOsg6tG7Ir66UsPTGAZlGuZxRZ+4YK1ElbrM="
+  },
+  "code": {
+    "salt": "pkPYzvBP4wEIGSPJrWcAkg==",
+    "nonce": "YeYjRlWRPzo1hmPt",
+    "ciphertext": "NzXlD//3+384t59ReBDNgDdVTzC54oJ2IZoQ+nvOyNLasHk7g/9wTFeZO51dGg=="
+  },
+  "chef": {
+    "salt": "zHvmmX0u/MZXoc5NoPV34A==",
+    "nonce": "Y/DYrzzM0V6H55hs",
+    "ciphertext": "8eURm/jCHA78pjRq3/vL2hajCKaKzUtNsyZHrAnQ"
+  },
+  "random": {
+    "salt": "8vY4bu/VtcF8ZNbrXwcbVA==",
+    "nonce": "DeE8L4SrS6Zo/gSh",
+    "ciphertext": "eGPcbaSJSuL6oY9q+cYQPTWrFjWP9Crt6fvTr3RS6Ow="
+  }
+}
